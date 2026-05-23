@@ -41,3 +41,7 @@ impl<T: Serialize + Send> IntoResponse for SubsonicResponse<T> {
         Json(self).into_response()
     }
 }
+
+/// Payload for endpoints that return only `status=ok` with no additional fields.
+#[derive(Serialize, Default)]
+pub struct Empty {}

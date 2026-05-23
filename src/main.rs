@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 mod auth;
+mod extract;
 mod error;
 mod handlers;
 mod response;

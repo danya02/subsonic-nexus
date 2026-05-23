@@ -4,23 +4,26 @@ use axum::{
 };
 
 use crate::handlers::{
-    advanced, bookmarks, browsing, chat, internet_radio, jukebox, lists, media_annotation,
+    admin, advanced, bookmarks, browsing, chat, internet_radio, jukebox, lists, media_annotation,
     media_retrieval, playlists, podcast, scanning, searching, sharing, system, transcoding,
     user_management,
 };
+use crate::state::AppState;
 
 /// Register a route that accepts both GET and POST with the same handler.
-fn get_post<H, T, S>(handler: H) -> MethodRouter<S>
+fn get_post<H, T>(handler: H) -> MethodRouter<AppState>
 where
-    H: axum::handler::Handler<T, S> + Clone,
+    H: axum::handler::Handler<T, AppState> + Clone,
     T: 'static,
-    S: Clone + Send + Sync + 'static,
 {
     get(handler.clone()).post(handler)
 }
 
-pub fn build_router() -> Router {
+pub fn build_router(state: AppState) -> Router {
     Router::new()
+        // ── Admin UI ─────────────────────────────────────────────────────────
+        .route("/",            get(admin::index))
+        .route("/admin/scan",  post(admin::trigger_scan))
         // ── System ──────────────────────────────────────────────────────────
         .route("/rest/ping",                        get_post(system::ping))
         .route("/rest/getLicense",                  get_post(system::get_license))
@@ -143,4 +146,6 @@ pub fn build_router() -> Router {
         // ── Advanced / OpenSubsonic Extensions ───────────────────────────────
         .route("/rest/findSonicPath",               get_post(advanced::find_sonic_path))
         .route("/rest/getSonicSimilarTracks",       get_post(advanced::get_sonic_similar_tracks))
+
+        .with_state(state)
 }

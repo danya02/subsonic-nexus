@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod advanced;
 pub mod bookmarks;
 pub mod browsing;

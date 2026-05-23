@@ -1,0 +1,3 @@
+[submodule "upstream/open-subsonic-api"]
+	path = upstream/open-subsonic-api
+	url = https://github.com/opensubsonic/open-subsonic-api

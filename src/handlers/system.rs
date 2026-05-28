@@ -25,22 +25,39 @@ pub struct TokenInfoResponse {
 
 /// GET/POST /rest/ping
 pub async fn ping(_auth: SubsonicAuth) -> SubsonicResponse<Empty> {
-    todo!()
+    Empty {}.into()
 }
 
 /// GET/POST /rest/getLicense
 pub async fn get_license(_auth: SubsonicAuth) -> SubsonicResponse<LicenseResponse> {
-    todo!()
+    LicenseResponse {
+        license: License {
+            valid: true,
+            email: None,
+            license_expires: None,
+            trial_expires: None,
+        },
+    }
+    .into()
 }
 
 /// GET/POST /rest/getOpenSubsonicExtensions
-pub async fn get_open_subsonic_extensions(
-    _auth: SubsonicAuth,
-) -> SubsonicResponse<OpenSubsonicExtensionsResponse> {
-    todo!()
+pub async fn get_open_subsonic_extensions() -> SubsonicResponse<OpenSubsonicExtensionsResponse> {
+    OpenSubsonicExtensionsResponse {
+        open_subsonic_extensions: vec![OpenSubsonicExtension {
+            name: "formPost".to_string(),
+            versions: vec![1],
+        }],
+    }
+    .into()
 }
 
 /// GET/POST /rest/tokenInfo
-pub async fn token_info(_auth: SubsonicAuth) -> SubsonicResponse<TokenInfoResponse> {
-    todo!()
+pub async fn token_info(auth: SubsonicAuth) -> SubsonicResponse<TokenInfoResponse> {
+    TokenInfoResponse {
+        token_info: TokenInfo {
+            username: auth.username.unwrap_or_else(|| "anonymous".to_string()),
+        },
+    }
+    .into()
 }

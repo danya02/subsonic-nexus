@@ -1,7 +1,8 @@
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
 use crate::auth::SubsonicAuth;
+use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
 
 // ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ pub async fn find_sonic_path(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<FindSonicPathParams>,
 ) -> Response {
-    todo!()
+    SubsonicError::not_found("findSonicPath is not supported").into_response()
 }
 
 // --- getSonicSimilarTracks ---
@@ -45,5 +46,5 @@ pub async fn get_sonic_similar_tracks(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<GetSonicSimilarTracksParams>,
 ) -> Response {
-    todo!()
+    SubsonicError::not_found("getSonicSimilarTracks is not supported").into_response()
 }

@@ -1,8 +1,9 @@
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use opensubsonic::data::TranscodeDecision;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::SubsonicAuth;
+use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
 use crate::response::SubsonicResponse;
 
@@ -33,8 +34,8 @@ pub struct GetTranscodeDecisionParams {
 pub async fn get_transcode_decision(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<GetTranscodeDecisionParams>,
-) -> SubsonicResponse<TranscodeDecisionResponse> {
-    todo!()
+) -> Result<SubsonicResponse<TranscodeDecisionResponse>, SubsonicError> {
+    Err(SubsonicError::not_found("Transcoding is not supported"))
 }
 
 // --- getTranscodeStream ---
@@ -53,5 +54,5 @@ pub async fn get_transcode_stream(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<GetTranscodeStreamParams>,
 ) -> Response {
-    todo!()
+    SubsonicError::not_found("Transcoding is not supported").into_response()
 }

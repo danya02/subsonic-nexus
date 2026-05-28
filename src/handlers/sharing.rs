@@ -2,6 +2,7 @@ use opensubsonic::data::Share;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::SubsonicAuth;
+use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
 use crate::response::{Empty, SubsonicResponse};
 
@@ -25,7 +26,7 @@ pub struct SharesResponse {
 
 /// GET/POST /rest/getShares — no extra parameters
 pub async fn get_shares(_auth: SubsonicAuth) -> SubsonicResponse<SharesResponse> {
-    todo!()
+    SharesResponse { shares: SharesBody { share: vec![] } }.into()
 }
 
 // --- createShare ---
@@ -42,8 +43,8 @@ pub struct CreateShareParams {
 pub async fn create_share(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<CreateShareParams>,
-) -> SubsonicResponse<SharesResponse> {
-    todo!()
+) -> Result<SubsonicResponse<SharesResponse>, SubsonicError> {
+    Err(SubsonicError::not_authorized("Sharing is not supported"))
 }
 
 // --- updateShare ---
@@ -59,8 +60,8 @@ pub struct UpdateShareParams {
 pub async fn update_share(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<UpdateShareParams>,
-) -> SubsonicResponse<Empty> {
-    todo!()
+) -> Result<SubsonicResponse<Empty>, SubsonicError> {
+    Err(SubsonicError::not_authorized("Sharing is not supported"))
 }
 
 // --- deleteShare ---
@@ -74,6 +75,6 @@ pub struct DeleteShareParams {
 pub async fn delete_share(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<DeleteShareParams>,
-) -> SubsonicResponse<Empty> {
-    todo!()
+) -> Result<SubsonicResponse<Empty>, SubsonicError> {
+    Err(SubsonicError::not_authorized("Sharing is not supported"))
 }

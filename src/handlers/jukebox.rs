@@ -2,6 +2,7 @@ use opensubsonic::data::{JukeboxPlaylist, JukeboxStatus};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::SubsonicAuth;
+use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
 use crate::response::SubsonicResponse;
 
@@ -44,6 +45,6 @@ pub struct JukeboxControlParams {
 pub async fn jukebox_control(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<JukeboxControlParams>,
-) -> SubsonicResponse<JukeboxResponseData> {
-    todo!()
+) -> Result<SubsonicResponse<JukeboxResponseData>, SubsonicError> {
+    Err(SubsonicError::not_authorized("Jukebox is not supported"))
 }

@@ -2,6 +2,7 @@ use opensubsonic::data::User;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::SubsonicAuth;
+use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
 use crate::response::{Empty, SubsonicResponse};
 
@@ -25,6 +26,34 @@ pub struct UsersResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Build a synthetic admin User for the given username.
+fn admin_user(username: String) -> User {
+    User {
+        username,
+        scrobbling_enabled: Some(true),
+        max_bit_rate: None,
+        admin_role: Some(true),
+        settings_role: Some(true),
+        download_role: Some(true),
+        upload_role: Some(false),
+        playlist_role: Some(true),
+        cover_art_role: Some(true),
+        comment_role: Some(true),
+        podcast_role: Some(true),
+        stream_role: Some(true),
+        jukebox_role: Some(false),
+        share_role: Some(false),
+        video_conversion_role: Some(false),
+        avatar_last_changed: None,
+        folder: vec![],
+        email: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -38,14 +67,15 @@ pub struct GetUserParams {
 /// GET/POST /rest/getUser
 pub async fn get_user(
     _auth: SubsonicAuth,
-    QueryOrForm(_params): QueryOrForm<GetUserParams>,
+    QueryOrForm(params): QueryOrForm<GetUserParams>,
 ) -> SubsonicResponse<UserResponse> {
-    todo!()
+    UserResponse { user: admin_user(params.username) }.into()
 }
 
 /// GET/POST /rest/getUsers — no extra parameters
-pub async fn get_users(_auth: SubsonicAuth) -> SubsonicResponse<UsersResponse> {
-    todo!()
+pub async fn get_users(auth: SubsonicAuth) -> SubsonicResponse<UsersResponse> {
+    let username = auth.username.unwrap_or_else(|| "admin".to_string());
+    UsersResponse { users: UsersBody { user: vec![admin_user(username)] } }.into()
 }
 
 // --- createUser ---
@@ -77,8 +107,8 @@ pub struct CreateUserParams {
 pub async fn create_user(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<CreateUserParams>,
-) -> SubsonicResponse<Empty> {
-    todo!()
+) -> Result<SubsonicResponse<Empty>, SubsonicError> {
+    Err(SubsonicError::not_authorized("User management is not supported"))
 }
 
 // --- updateUser ---
@@ -111,8 +141,8 @@ pub struct UpdateUserParams {
 pub async fn update_user(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<UpdateUserParams>,
-) -> SubsonicResponse<Empty> {
-    todo!()
+) -> Result<SubsonicResponse<Empty>, SubsonicError> {
+    Err(SubsonicError::not_authorized("User management is not supported"))
 }
 
 // --- deleteUser ---
@@ -126,8 +156,8 @@ pub struct DeleteUserParams {
 pub async fn delete_user(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<DeleteUserParams>,
-) -> SubsonicResponse<Empty> {
-    todo!()
+) -> Result<SubsonicResponse<Empty>, SubsonicError> {
+    Err(SubsonicError::not_authorized("User management is not supported"))
 }
 
 // --- changePassword ---
@@ -142,6 +172,6 @@ pub struct ChangePasswordParams {
 pub async fn change_password(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<ChangePasswordParams>,
-) -> SubsonicResponse<Empty> {
-    todo!()
+) -> Result<SubsonicResponse<Empty>, SubsonicError> {
+    Err(SubsonicError::not_authorized("User management is not supported"))
 }

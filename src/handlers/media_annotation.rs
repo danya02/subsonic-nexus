@@ -1,10 +1,50 @@
+use std::time::Duration;
+
+use axum::extract::State;
 use serde::Deserialize;
 
 use crate::auth::SubsonicAuth;
 use crate::extract::QueryOrForm;
+use crate::nexus::{IdTemplate, build_upstream_url, get_conn, parse_entity_id, query_song_by_nexus_id};
 use crate::response::{Empty, SubsonicResponse};
+use crate::state::AppState;
 
-// --- star / unstar ---
+// ---------------------------------------------------------------------------
+// Shared helper: fire-and-forget POST to an upstream REST endpoint
+// ---------------------------------------------------------------------------
+
+/// Proxy a write operation to an upstream server.
+///
+/// Builds the authenticated URL, sends the request, and logs the outcome.
+/// Uses a 15-second connect+read timeout so slow upstreams don't block
+/// handlers indefinitely.
+async fn proxy_write(
+    server_cfg: &crate::config::ServerConfig,
+    endpoint: &str,
+    params: &[(&str, &str)],
+) {
+    let url = build_upstream_url(server_cfg, endpoint, params);
+    tracing::info!(endpoint, server = %server_cfg.name, "write proxy: sending");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .unwrap_or_default();
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            tracing::info!(endpoint, server = %server_cfg.name, %status, "write proxy: ok");
+            tracing::debug!(endpoint, server = %server_cfg.name, body = &body[..body.len().min(200)], "write proxy: response body");
+        }
+        Err(e) => {
+            tracing::warn!(endpoint, server = %server_cfg.name, error = %e, "write proxy: failed");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// star / unstar
+// ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,20 +60,66 @@ pub struct StarParams {
 /// GET/POST /rest/star
 pub async fn star(
     _auth: SubsonicAuth,
-    QueryOrForm(_params): QueryOrForm<StarParams>,
+    State(state): State<AppState>,
+    QueryOrForm(params): QueryOrForm<StarParams>,
 ) -> SubsonicResponse<Empty> {
-    todo!()
+    proxy_annotation(&state, "star", params).await;
+    Empty {}.into()
 }
 
 /// GET/POST /rest/unstar
 pub async fn unstar(
     _auth: SubsonicAuth,
-    QueryOrForm(_params): QueryOrForm<StarParams>,
+    State(state): State<AppState>,
+    QueryOrForm(params): QueryOrForm<StarParams>,
 ) -> SubsonicResponse<Empty> {
-    todo!()
+    proxy_annotation(&state, "unstar", params).await;
+    Empty {}.into()
 }
 
-// --- setRating ---
+/// Proxy a star/unstar call to the `write_target` server (if configured),
+/// translating nexus IDs to upstream IDs.
+async fn proxy_annotation(state: &AppState, endpoint: &str, params: StarParams) {
+    let Some(ref target_name) = state.config.nexus.write_target else { return };
+    let Some(server_cfg) = state.config.server_by_name(target_name) else { return };
+
+    let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
+    let mut query_params: Vec<String> = Vec::new();
+
+    for nexus_id in &params.id {
+        let parsed = parse_entity_id(template, nexus_id);
+        query_params.push(format!("id={}", parsed.upstream_id));
+    }
+    for nexus_id in &params.album_id {
+        let parsed = parse_entity_id(template, nexus_id);
+        query_params.push(format!("albumId={}", parsed.upstream_id));
+    }
+    for nexus_id in &params.artist_id {
+        let parsed = parse_entity_id(template, nexus_id);
+        query_params.push(format!("artistId={}", parsed.upstream_id));
+    }
+
+    if query_params.is_empty() {
+        return;
+    }
+
+    // build_upstream_url uses &[(&str, &str)] — build owned pairs
+    let pairs: Vec<(String, String)> = query_params
+        .iter()
+        .filter_map(|s| {
+            let mut it = s.splitn(2, '=');
+            Some((it.next()?.to_owned(), it.next()?.to_owned()))
+        })
+        .collect();
+    let ref_pairs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+
+    proxy_write(server_cfg, endpoint, &ref_pairs).await;
+
+}
+
+// ---------------------------------------------------------------------------
+// setRating
+// ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 pub struct SetRatingParams {
@@ -45,30 +131,71 @@ pub struct SetRatingParams {
 /// GET/POST /rest/setRating
 pub async fn set_rating(
     _auth: SubsonicAuth,
-    QueryOrForm(_params): QueryOrForm<SetRatingParams>,
+    State(state): State<AppState>,
+    QueryOrForm(params): QueryOrForm<SetRatingParams>,
 ) -> SubsonicResponse<Empty> {
-    todo!()
+    if let Some(ref target_name) = state.config.nexus.write_target {
+        if let Some(server_cfg) = state.config.server_by_name(target_name) {
+            let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
+            let parsed = parse_entity_id(template, &params.id);
+            let rating_s = params.rating.to_string();
+            proxy_write(server_cfg, "setRating", &[
+                ("id", &parsed.upstream_id),
+                ("rating", &rating_s),
+            ])
+            .await;
+        }
+    }
+    Empty {}.into()
 }
 
-// --- scrobble ---
+// ---------------------------------------------------------------------------
+// scrobble
+// ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 pub struct ScrobbleParams {
-    /// Repeated for batch scrobbles.
     pub id: String,
     pub time: Option<i64>,
     pub submission: Option<bool>,
 }
 
 /// GET/POST /rest/scrobble
+///
+/// Proxied to the song's own upstream server (the one it was imported from),
+/// not the `write_target`.  This records the play on the correct server so
+/// its play count / Last.fm scrobble reflects reality.
 pub async fn scrobble(
     _auth: SubsonicAuth,
-    QueryOrForm(_params): QueryOrForm<ScrobbleParams>,
+    State(state): State<AppState>,
+    QueryOrForm(params): QueryOrForm<ScrobbleParams>,
 ) -> SubsonicResponse<Empty> {
-    todo!()
+    // Look up song to find its canonical server.
+    if let Ok(mut conn) = get_conn(&state.pool).await {
+        let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
+        if let Ok(Some(song)) = query_song_by_nexus_id(&mut conn, template, &params.id).await {
+            if let Some(server_cfg) = state.config.server_by_name(&song.server_name) {
+                let time_s;
+                let submission_s;
+                let mut extra: Vec<(&str, &str)> = vec![("id", &song.upstream_id)];
+                if let Some(t) = params.time {
+                    time_s = t.to_string();
+                    extra.push(("time", &time_s));
+                }
+                if let Some(s) = params.submission {
+                    submission_s = s.to_string();
+                    extra.push(("submission", &submission_s));
+                }
+                proxy_write(server_cfg, "scrobble", &extra).await;
+            }
+        }
+    }
+    Empty {}.into()
 }
 
-// --- reportPlayback ---
+// ---------------------------------------------------------------------------
+// reportPlayback
+// ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,9 +209,38 @@ pub struct ReportPlaybackParams {
 }
 
 /// GET/POST /rest/reportPlayback
+///
+/// OpenSubsonic extension.  Like scrobble, proxied to the song's own server.
 pub async fn report_playback(
     _auth: SubsonicAuth,
-    QueryOrForm(_params): QueryOrForm<ReportPlaybackParams>,
+    State(state): State<AppState>,
+    QueryOrForm(params): QueryOrForm<ReportPlaybackParams>,
 ) -> SubsonicResponse<Empty> {
-    todo!()
+    if let Ok(mut conn) = get_conn(&state.pool).await {
+        let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
+        if let Ok(Some(song)) = query_song_by_nexus_id(&mut conn, template, &params.media_id).await
+        {
+            if let Some(server_cfg) = state.config.server_by_name(&song.server_name) {
+                let position_s = params.position_ms.to_string();
+                let ignore_s;
+                let rate_s;
+                let mut extra: Vec<(&str, &str)> = vec![
+                    ("mediaId", &song.upstream_id),
+                    ("mediaType", &params.media_type),
+                    ("positionMs", &position_s),
+                    ("state", &params.state),
+                ];
+                if let Some(ig) = params.ignore_scrobble {
+                    ignore_s = ig.to_string();
+                    extra.push(("ignoreScrobble", &ignore_s));
+                }
+                if let Some(r) = params.playback_rate {
+                    rate_s = r.to_string();
+                    extra.push(("playbackRate", &rate_s));
+                }
+                proxy_write(server_cfg, "reportPlayback", &extra).await;
+            }
+        }
+    }
+    Empty {}.into()
 }

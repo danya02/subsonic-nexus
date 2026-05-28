@@ -1,4 +1,7 @@
-use axum::{Json, response::{IntoResponse, Response}};
+use axum::{
+    Json,
+    response::{IntoResponse, Response},
+};
 use serde::Serialize;
 
 pub const API_VERSION: &str = "1.16.1";
@@ -20,6 +23,15 @@ pub struct SubsonicResponseBody<T: Serialize> {
     pub open_subsonic: bool,
     #[serde(flatten)]
     pub data: T,
+}
+
+impl<T> From<T> for SubsonicResponse<T>
+where
+    T: Serialize,
+{
+    fn from(value: T) -> Self {
+        SubsonicResponse::<T>::ok(value)
+    }
 }
 
 impl<T: Serialize> SubsonicResponse<T> {

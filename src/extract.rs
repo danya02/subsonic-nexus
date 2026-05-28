@@ -54,7 +54,9 @@ where
             _ => format!("{}&{}", query, body_str),
         };
 
-        let params = serde_urlencoded::from_str::<T>(&combined)
+        // Use serde_qs instead of serde_urlencoded so that repeated keys
+        // like `id=a&id=b` are correctly deserialized into Vec<String>.
+        let params = serde_qs::from_str::<T>(&combined)
             .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
 
         Ok(QueryOrForm(params))

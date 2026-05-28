@@ -2,6 +2,8 @@ use axum::{
     Router,
     routing::{get, post, MethodRouter},
 };
+use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tracing::Level;
 
 use crate::handlers::{
     admin, advanced, bookmarks, browsing, chat, internet_radio, jukebox, lists, media_annotation,
@@ -147,5 +149,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/rest/findSonicPath",               get_post(advanced::find_sonic_path))
         .route("/rest/getSonicSimilarTracks",       get_post(advanced::get_sonic_similar_tracks))
 
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
         .with_state(state)
 }

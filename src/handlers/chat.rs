@@ -37,7 +37,7 @@ pub async fn get_chat_messages(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<GetChatMessagesParams>,
 ) -> SubsonicResponse<ChatMessagesResponse> {
-    todo!()
+    ChatMessagesResponse { chat_messages: ChatMessagesBody { chat_message: vec![] } }.into()
 }
 
 // --- addChatMessage ---
@@ -52,5 +52,5 @@ pub async fn add_chat_message(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<AddChatMessageParams>,
 ) -> SubsonicResponse<Empty> {
-    todo!()
+    Empty {}.into()
 }

@@ -10,6 +10,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use diesel::prelude::*;
+use diesel_async::RunQueryDsl;
 use serde_json::json;
 
 use crate::db::schema::*;
@@ -18,7 +19,7 @@ use crate::state::AppState;
 // ── GET / ─────────────────────────────────────────────────────────────────────
 
 pub async fn index(State(state): State<AppState>) -> Response {
-    match build_index_html(&state) {
+    match build_index_html(&state).await {
         Ok(html) => Html(html).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -28,24 +29,29 @@ pub async fn index(State(state): State<AppState>) -> Response {
     }
 }
 
-fn build_index_html(state: &AppState) -> Result<String, Box<dyn std::error::Error>> {
-    let mut conn = state.pool.get()?;
+async fn build_index_html(state: &AppState) -> Result<String, Box<dyn std::error::Error>> {
+    let mut conn = state.pool.get().await?;
 
     // ── Row counts (aggregate across all servers) ──────────────────────────
-    let total_artists: i64 = artists::table.count().get_result(&mut conn)?;
+    let total_artists: i64 = artists::table.count().get_result(&mut conn).await?;
     let unique_artist_keys: i64 = artists::table
         .select(diesel::dsl::count(artists::aggregation_key).aggregate_distinct())
-        .first(&mut conn)?;
+        .first(&mut conn)
+        .await?;
 
-    let total_albums: i64 = albums::table.count().get_result(&mut conn)?;
+    let total_albums: i64 = albums::table.count().get_result(&mut conn).await?;
     let unique_album_keys: i64 = albums::table
         .select(diesel::dsl::count(albums::aggregation_key).aggregate_distinct())
-        .first(&mut conn)?;
+        .first(&mut conn)
+        .await?;
 
-    let total_songs: i64 = songs::table.count().get_result(&mut conn)?;
-    let total_podcasts: i64 = podcast_channels::table.count().get_result(&mut conn)?;
-    let total_episodes: i64 = podcast_episodes::table.count().get_result(&mut conn)?;
-    let total_radio: i64 = internet_radio_stations::table.count().get_result(&mut conn)?;
+    let total_songs: i64 = songs::table.count().get_result(&mut conn).await?;
+    let total_podcasts: i64 = podcast_channels::table.count().get_result(&mut conn).await?;
+    let total_episodes: i64 = podcast_episodes::table.count().get_result(&mut conn).await?;
+    let total_radio: i64 = internet_radio_stations::table
+        .count()
+        .get_result(&mut conn)
+        .await?;
 
     // ── Per-server info from the DB ────────────────────────────────────────
     let db_servers: Vec<(i32, String, String, i32, Option<String>)> =
@@ -58,28 +64,38 @@ fn build_index_html(state: &AppState) -> Result<String, Box<dyn std::error::Erro
                 upstream_servers::last_scanned_at,
             ))
             .order(upstream_servers::priority.asc())
-            .load(&mut conn)?;
+            .load(&mut conn)
+            .await?;
 
     // Per-server row counts
     let server_artist_counts: Vec<(i32, i64)> = artists::table
         .group_by(artists::server_id)
         .select((artists::server_id, diesel::dsl::count_star()))
-        .load(&mut conn)?;
+        .load(&mut conn)
+        .await?;
 
     let server_album_counts: Vec<(i32, i64)> = albums::table
         .group_by(albums::server_id)
         .select((albums::server_id, diesel::dsl::count_star()))
-        .load(&mut conn)?;
+        .load(&mut conn)
+        .await?;
 
     let server_song_counts: Vec<(i32, i64)> = songs::table
         .group_by(songs::server_id)
         .select((songs::server_id, diesel::dsl::count_star()))
-        .load(&mut conn)?;
+        .load(&mut conn)
+        .await?;
 
-    let lookup = |v: &[(i32, i64)], id: i32| v.iter().find(|(s, _)| *s == id).map_or(0, |(_, n)| *n);
+    let lookup =
+        |v: &[(i32, i64)], id: i32| v.iter().find(|(s, _)| *s == id).map_or(0, |(_, n)| *n);
 
     // ── Servers configured in nexus.toml (may not be scanned yet) ─────────
-    let config_servers: Vec<&str> = state.config.servers.iter().map(|s| s.name.as_str()).collect();
+    let config_servers: Vec<&str> = state
+        .config
+        .servers
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
 
     // ── Build HTML ─────────────────────────────────────────────────────────
     let server_rows: String = db_servers
@@ -109,10 +125,14 @@ fn build_index_html(state: &AppState) -> Result<String, Box<dyn std::error::Erro
         .collect();
 
     // Servers in config but not yet in DB
-    let unscanned_rows: String = state.config.servers.iter()
+    let unscanned_rows: String = state
+        .config
+        .servers
+        .iter()
         .filter(|s| !db_servers.iter().any(|(_, name, _, _, _)| name == &s.name))
-        .map(|s| format!(
-            r#"<tr class="dim">
+        .map(|s| {
+            format!(
+                r#"<tr class="dim">
   <td><strong>{}</strong><br><small class="muted">{}</small></td>
   <td class="center">{}</td>
   <td class="center">—</td>
@@ -121,8 +141,9 @@ fn build_index_html(state: &AppState) -> Result<String, Box<dyn std::error::Erro
   <td class="center"><code>not scanned</code></td>
   <td class="center"><span class="badge warn">⚠ pending scan</span></td>
 </tr>"#,
-            s.name, s.url, s.priority
-        ))
+                s.name, s.url, s.priority
+            )
+        })
         .collect();
 
     let html = format!(
@@ -255,36 +276,35 @@ pub async fn trigger_scan(State(state): State<AppState>) -> Response {
     // Spawn the scan as a background task so we can return immediately.
     tokio::spawn(async move {
         for cfg in &state.config.servers {
-            let mut conn = match state.pool.get() {
+            let mut conn = match state.pool.get().await {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("[scan] Failed to get DB connection for {}: {e}", cfg.name);
+                    tracing::error!(server = %cfg.name, error = %e, "scan: failed to get DB connection");
                     continue;
                 }
             };
 
-            let server_id = match crate::scanner::ensure_server_row(&mut conn, cfg) {
+            let server_id = match crate::scanner::ensure_server_row(&mut conn, cfg).await {
                 Ok((id, _)) => id,
                 Err(e) => {
-                    eprintln!("[scan] Failed to ensure server row for {}: {e}", cfg.name);
+                    tracing::error!(server = %cfg.name, error = %e, "scan: failed to ensure server row");
                     continue;
                 }
             };
 
-            eprintln!("[scan] Starting scan of '{}' …", cfg.name);
+            tracing::info!(server = %cfg.name, "scan: starting");
             match crate::scanner::scan_server(&mut conn, cfg, server_id).await {
-                Ok(stats) => eprintln!(
-                    "[scan] '{}' done — {} artists, {} albums, {} songs, \
-                     {} podcast channels, {} episodes, {} radio stations",
-                    cfg.name,
-                    stats.artists,
-                    stats.albums,
-                    stats.songs,
-                    stats.podcast_channels,
-                    stats.podcast_episodes,
-                    stats.radio_stations,
+                Ok(stats) => tracing::info!(
+                    server = %cfg.name,
+                    artists = stats.artists,
+                    albums = stats.albums,
+                    songs = stats.songs,
+                    podcast_channels = stats.podcast_channels,
+                    podcast_episodes = stats.podcast_episodes,
+                    radio_stations = stats.radio_stations,
+                    "scan: complete",
                 ),
-                Err(e) => eprintln!("[scan] '{}' failed: {e}", cfg.name),
+                Err(e) => tracing::warn!(server = %cfg.name, error = %e, "scan: failed"),
             }
         }
     });

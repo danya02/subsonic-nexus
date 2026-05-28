@@ -11,6 +11,8 @@ use serde::Deserialize;
 pub struct Config {
     #[serde(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
+    #[serde(default)]
+    pub nexus: NexusConfig,
 }
 
 /// Per-upstream-server configuration.
@@ -63,9 +65,55 @@ fn default_album_template() -> String {
     "{music_brainz_id:-{artist_key}:{name|lowercase|trim}}".to_owned()
 }
 
+/// Nexus-wide settings (the `[nexus]` table in `nexus.toml`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct NexusConfig {
+    /// Template used to build the entity ID exposed to Subsonic clients.
+    ///
+    /// Available fields: `upstream_id`, `server_name`, `server_id`.
+    ///
+    /// The template must be round-trippable (no transforms) so that the nexus
+    /// can parse incoming IDs back to `(server, upstream_id)` pairs.
+    ///
+    /// Supported forms:
+    ///   `{upstream_id}`                  — use the upstream ID directly (default)
+    ///   `{server_name}:{upstream_id}`    — prefix with server name
+    ///   `{server_id}:{upstream_id}`      — prefix with server DB row id
+    #[serde(default = "default_entity_id_template")]
+    pub entity_id_template: String,
+
+    /// When `true`, stream/download/getCoverArt byte-proxy responses through
+    /// the nexus.  When `false` (default), return HTTP 302 redirects to the
+    /// upstream server.
+    #[serde(default)]
+    pub proxy: bool,
+
+    /// Name of the server to proxy write operations (star, playlists, …) to.
+    /// Must match a `[[server]]` `name` field.  If absent, write operations
+    /// return `not_authorized`.
+    pub write_target: Option<String>,
+}
+
+impl Default for NexusConfig {
+    fn default() -> Self {
+        Self {
+            entity_id_template: default_entity_id_template(),
+            proxy: false,
+            write_target: None,
+        }
+    }
+}
+
+fn default_entity_id_template() -> String {
+    "{upstream_id}".to_owned()
+}
+
 impl Default for Config {
     fn default() -> Self {
-        Self { servers: vec![] }
+        Self {
+            servers: vec![],
+            nexus: NexusConfig::default(),
+        }
     }
 }
 
@@ -78,5 +126,10 @@ impl Config {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Look up a server config by name.
+    pub fn server_by_name(&self, name: &str) -> Option<&ServerConfig> {
+        self.servers.iter().find(|s| s.name == name)
     }
 }

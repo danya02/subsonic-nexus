@@ -2,6 +2,7 @@ use opensubsonic::data::Bookmark;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::SubsonicAuth;
+use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
 use crate::response::{Empty, SubsonicResponse};
 
@@ -25,7 +26,7 @@ pub struct BookmarksResponse {
 
 /// GET/POST /rest/getBookmarks — no extra parameters
 pub async fn get_bookmarks(_auth: SubsonicAuth) -> SubsonicResponse<BookmarksResponse> {
-    todo!()
+    BookmarksResponse { bookmarks: BookmarksBody { bookmark: vec![] } }.into()
 }
 
 // --- createBookmark ---
@@ -41,8 +42,8 @@ pub struct CreateBookmarkParams {
 pub async fn create_bookmark(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<CreateBookmarkParams>,
-) -> SubsonicResponse<Empty> {
-    todo!()
+) -> Result<SubsonicResponse<Empty>, SubsonicError> {
+    Err(SubsonicError::not_authorized("Bookmarks are not supported"))
 }
 
 // --- deleteBookmark ---
@@ -56,6 +57,6 @@ pub struct DeleteBookmarkParams {
 pub async fn delete_bookmark(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<DeleteBookmarkParams>,
-) -> SubsonicResponse<Empty> {
-    todo!()
+) -> Result<SubsonicResponse<Empty>, SubsonicError> {
+    Err(SubsonicError::not_authorized("Bookmarks are not supported"))
 }

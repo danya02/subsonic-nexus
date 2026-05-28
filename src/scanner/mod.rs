@@ -15,12 +15,13 @@ pub mod template;
 #[cfg(test)]
 mod tests;
 
-use diesel::SqliteConnection;
 use diesel::prelude::*;
+use diesel_async::RunQueryDsl;
 use opensubsonic::{Auth, Client};
 use serde_json;
 
 use crate::config::ServerConfig;
+use crate::db::AsyncSqliteConnection;
 use crate::db::models::*;
 use crate::db::schema::*;
 use template::{Template, eval_album, eval_artist};
@@ -30,20 +31,21 @@ use template::{Template, eval_album, eval_artist};
 /// Ensure the `upstream_servers` row for `cfg` exists and has up-to-date
 /// templates.  Returns the local server id and a flag indicating whether a
 /// full rescan is needed (templates changed or first run).
-pub fn ensure_server_row(
-    conn: &mut SqliteConnection,
+pub async fn ensure_server_row(
+    conn: &mut AsyncSqliteConnection,
     cfg: &ServerConfig,
 ) -> QueryResult<(i32, bool)> {
     use upstream_servers::dsl as s;
+
+    let artist_tmpl = &cfg.matching.artist;
+    let album_tmpl = &cfg.matching.album;
 
     // Look for an existing row by (name, url) — the stable identity of a server.
     let existing: Option<UpstreamServer> = s::upstream_servers
         .filter(s::name.eq(&cfg.name).and(s::url.eq(&cfg.url)))
         .first(conn)
+        .await
         .optional()?;
-
-    let artist_tmpl = &cfg.matching.artist;
-    let album_tmpl = &cfg.matching.album;
 
     match existing {
         Some(row) => {
@@ -53,7 +55,7 @@ pub fn ensure_server_row(
 
             if templates_changed {
                 // Wipe all data for this server — aggregation keys are stale.
-                delete_server_data(conn, row.id)?;
+                delete_server_data(conn, row.id).await?;
 
                 diesel::update(s::upstream_servers.find(row.id))
                     .set((
@@ -62,12 +64,14 @@ pub fn ensure_server_row(
                         s::priority.eq(cfg.priority),
                         s::last_scanned_at.eq::<Option<&str>>(None),
                     ))
-                    .execute(conn)?;
+                    .execute(conn)
+                    .await?;
             } else {
                 // Just refresh priority in case it changed in config.
                 diesel::update(s::upstream_servers.find(row.id))
                     .set(s::priority.eq(cfg.priority))
-                    .execute(conn)?;
+                    .execute(conn)
+                    .await?;
             }
 
             Ok((row.id, templates_changed))
@@ -83,12 +87,14 @@ pub fn ensure_server_row(
                     artist_key_template: Some(artist_tmpl),
                     album_key_template: Some(album_tmpl),
                 })
-                .execute(conn)?;
+                .execute(conn)
+                .await?;
 
             let id: i32 = diesel::select(diesel::dsl::sql::<diesel::sql_types::Integer>(
                 "last_insert_rowid()",
             ))
-            .get_result(conn)?;
+            .get_result(conn)
+            .await?;
 
             Ok((id, true))
         }
@@ -97,19 +103,36 @@ pub fn ensure_server_row(
 
 /// Delete all library data for a server (artists, albums, songs, podcasts,
 /// radio stations).  The `upstream_servers` row itself is kept.
-pub fn delete_server_data(conn: &mut SqliteConnection, server_id: i32) -> QueryResult<()> {
+pub async fn delete_server_data(
+    conn: &mut AsyncSqliteConnection,
+    server_id: i32,
+) -> QueryResult<()> {
     // ON DELETE CASCADE handles the child tables, but let's be explicit.
-    diesel::delete(songs::table.filter(songs::server_id.eq(server_id))).execute(conn)?;
-    diesel::delete(albums::table.filter(albums::server_id.eq(server_id))).execute(conn)?;
-    diesel::delete(artists::table.filter(artists::server_id.eq(server_id))).execute(conn)?;
-    diesel::delete(podcast_episodes::table.filter(podcast_episodes::server_id.eq(server_id)))
-        .execute(conn)?;
-    diesel::delete(podcast_channels::table.filter(podcast_channels::server_id.eq(server_id)))
-        .execute(conn)?;
+    diesel::delete(songs::table.filter(songs::server_id.eq(server_id)))
+        .execute(conn)
+        .await?;
+    diesel::delete(albums::table.filter(albums::server_id.eq(server_id)))
+        .execute(conn)
+        .await?;
+    diesel::delete(artists::table.filter(artists::server_id.eq(server_id)))
+        .execute(conn)
+        .await?;
     diesel::delete(
-        internet_radio_stations::table.filter(internet_radio_stations::server_id.eq(server_id)),
+        podcast_episodes::table.filter(podcast_episodes::server_id.eq(server_id)),
     )
-    .execute(conn)?;
+    .execute(conn)
+    .await?;
+    diesel::delete(
+        podcast_channels::table.filter(podcast_channels::server_id.eq(server_id)),
+    )
+    .execute(conn)
+    .await?;
+    diesel::delete(
+        internet_radio_stations::table
+            .filter(internet_radio_stations::server_id.eq(server_id)),
+    )
+    .execute(conn)
+    .await?;
     Ok(())
 }
 
@@ -117,8 +140,9 @@ pub fn delete_server_data(conn: &mut SqliteConnection, server_id: i32) -> QueryR
 
 /// Scan the upstream server described by `cfg` and upsert its library into the
 /// local database.  Caller should have already called `ensure_server_row`.
+#[tracing::instrument(skip(conn, cfg), fields(server = %cfg.name, server_id))]
 pub async fn scan_server(
-    conn: &mut SqliteConnection,
+    conn: &mut AsyncSqliteConnection,
     cfg: &ServerConfig,
     server_id: i32,
 ) -> Result<ScanStats, ScanError> {
@@ -149,7 +173,8 @@ pub async fn scan_server(
                 &agg_key,
                 &artist_id3.name,
                 &metadata,
-            )?;
+            )
+            .await?;
 
             stats.artists += 1;
 
@@ -157,10 +182,7 @@ pub async fn scan_server(
             let artist_with_albums = match client.get_artist(&artist_id3.id).await {
                 Ok(a) => a,
                 Err(e) => {
-                    eprintln!(
-                        "[scanner] getArtist({}) failed: {e} — skipping",
-                        artist_id3.id
-                    );
+                    tracing::warn!(artist_id = %artist_id3.id, error = %e, "getArtist failed, skipping");
                     continue;
                 }
             };
@@ -183,7 +205,8 @@ pub async fn scan_server(
                     album_id3.played.as_deref(),
                     album_id3.user_rating.map(|r| r as i32),
                     &album_meta,
-                )?;
+                )
+                .await?;
 
                 stats.albums += 1;
 
@@ -191,10 +214,7 @@ pub async fn scan_server(
                 let album_with_songs = match client.get_album(&album_id3.id).await {
                     Ok(a) => a,
                     Err(e) => {
-                        eprintln!(
-                            "[scanner] getAlbum({}) failed: {e} — skipping",
-                            album_id3.id
-                        );
+                        tracing::warn!(album_id = %album_id3.id, error = %e, "getAlbum failed, skipping");
                         continue;
                     }
                 };
@@ -202,13 +222,16 @@ pub async fn scan_server(
                 for song in &album_with_songs.song {
                     let song_meta = serde_json::to_string(song).unwrap_or_default();
                     // Resolve artist FK: prefer the song's own artist_id if present.
-                    let song_artist_id = song
-                        .artist_id
-                        .as_deref()
-                        .and_then(|uid| {
-                            resolve_artist_local_id(conn, server_id, uid).ok().flatten()
-                        })
-                        .or(Some(local_artist_id));
+                    let song_artist_id = match song.artist_id.as_deref() {
+                        Some(uid) => {
+                            resolve_artist_local_id(conn, server_id, uid)
+                                .await
+                                .ok()
+                                .flatten()
+                                .or(Some(local_artist_id))
+                        }
+                        None => Some(local_artist_id),
+                    };
 
                     upsert_song(
                         conn,
@@ -220,7 +243,8 @@ pub async fn scan_server(
                         song.year.map(|y| y as i32),
                         song.genre.as_deref(),
                         &song_meta,
-                    )?;
+                    )
+                    .await?;
 
                     stats.songs += 1;
                 }
@@ -241,7 +265,8 @@ pub async fn scan_server(
                     &channel.id,
                     channel.title.as_deref(),
                     &ch_meta,
-                )?;
+                )
+                .await?;
                 stats.podcast_channels += 1;
 
                 for episode in &channel.episode {
@@ -254,13 +279,14 @@ pub async fn scan_server(
                         Some(episode.child.title.as_str()),
                         episode.publish_date.as_deref(),
                         &ep_meta,
-                    )?;
+                    )
+                    .await?;
                     stats.podcast_episodes += 1;
                 }
             }
         }
         Err(e) => {
-            eprintln!("[scanner] getPodcasts failed: {e} — skipping podcasts");
+            tracing::warn!(error = %e, "getPodcasts failed, skipping podcasts");
         }
     }
 
@@ -278,12 +304,13 @@ pub async fn scan_server(
                     &station.name,
                     &station.stream_url,
                     &meta,
-                )?;
+                )
+                .await?;
                 stats.radio_stations += 1;
             }
         }
         Err(e) => {
-            eprintln!("[scanner] getInternetRadioStations failed: {e} — skipping radio");
+            tracing::warn!(error = %e, "getInternetRadioStations failed, skipping radio");
         }
     }
 
@@ -293,6 +320,7 @@ pub async fn scan_server(
     diesel::update(upstream_servers::table.find(server_id))
         .set(upstream_servers::last_scanned_at.eq(&now))
         .execute(conn)
+        .await
         .ok();
 
     Ok(stats)
@@ -300,8 +328,8 @@ pub async fn scan_server(
 
 // ── Upsert helpers ────────────────────────────────────────────────────────────
 
-fn upsert_artist(
-    conn: &mut SqliteConnection,
+async fn upsert_artist(
+    conn: &mut AsyncSqliteConnection,
     server_id: i32,
     upstream_id: &str,
     aggregation_key: &str,
@@ -323,7 +351,8 @@ fn upsert_artist(
             artists::name.eq(name),
             artists::metadata_json.eq(metadata_json),
         ))
-        .execute(conn)?;
+        .execute(conn)
+        .await?;
 
     artists::table
         .filter(
@@ -333,11 +362,12 @@ fn upsert_artist(
         )
         .select(artists::id)
         .first(conn)
+        .await
 }
 
 #[allow(clippy::too_many_arguments)]
-fn upsert_album(
-    conn: &mut SqliteConnection,
+async fn upsert_album(
+    conn: &mut AsyncSqliteConnection,
     server_id: i32,
     upstream_id: &str,
     aggregation_key: &str,
@@ -380,7 +410,8 @@ fn upsert_album(
             albums::user_rating.eq(user_rating),
             albums::metadata_json.eq(metadata_json),
         ))
-        .execute(conn)?;
+        .execute(conn)
+        .await?;
 
     albums::table
         .filter(
@@ -390,11 +421,12 @@ fn upsert_album(
         )
         .select(albums::id)
         .first(conn)
+        .await
 }
 
 #[allow(clippy::too_many_arguments)]
-fn upsert_song(
-    conn: &mut SqliteConnection,
+async fn upsert_song(
+    conn: &mut AsyncSqliteConnection,
     server_id: i32,
     upstream_id: &str,
     album_id: Option<i32>,
@@ -425,12 +457,13 @@ fn upsert_song(
             songs::genre.eq(genre),
             songs::metadata_json.eq(metadata_json),
         ))
-        .execute(conn)?;
+        .execute(conn)
+        .await?;
     Ok(())
 }
 
-fn upsert_podcast_channel(
-    conn: &mut SqliteConnection,
+async fn upsert_podcast_channel(
+    conn: &mut AsyncSqliteConnection,
     server_id: i32,
     upstream_id: &str,
     title: Option<&str>,
@@ -449,7 +482,8 @@ fn upsert_podcast_channel(
             podcast_channels::title.eq(title),
             podcast_channels::metadata_json.eq(metadata_json),
         ))
-        .execute(conn)?;
+        .execute(conn)
+        .await?;
 
     podcast_channels::table
         .filter(
@@ -459,10 +493,11 @@ fn upsert_podcast_channel(
         )
         .select(podcast_channels::id)
         .first(conn)
+        .await
 }
 
-fn upsert_podcast_episode(
-    conn: &mut SqliteConnection,
+async fn upsert_podcast_episode(
+    conn: &mut AsyncSqliteConnection,
     server_id: i32,
     upstream_id: &str,
     channel_id: Option<i32>,
@@ -487,12 +522,13 @@ fn upsert_podcast_episode(
             podcast_episodes::publish_date.eq(publish_date),
             podcast_episodes::metadata_json.eq(metadata_json),
         ))
-        .execute(conn)?;
+        .execute(conn)
+        .await?;
     Ok(())
 }
 
-fn upsert_radio_station(
-    conn: &mut SqliteConnection,
+async fn upsert_radio_station(
+    conn: &mut AsyncSqliteConnection,
     server_id: i32,
     upstream_id: &str,
     name: &str,
@@ -517,13 +553,14 @@ fn upsert_radio_station(
             internet_radio_stations::stream_url.eq(stream_url),
             internet_radio_stations::metadata_json.eq(metadata_json),
         ))
-        .execute(conn)?;
+        .execute(conn)
+        .await?;
     Ok(())
 }
 
 /// Look up the local `artists.id` for a given `(server_id, upstream_id)` pair.
-fn resolve_artist_local_id(
-    conn: &mut SqliteConnection,
+async fn resolve_artist_local_id(
+    conn: &mut AsyncSqliteConnection,
     server_id: i32,
     upstream_id: &str,
 ) -> QueryResult<Option<i32>> {
@@ -535,20 +572,18 @@ fn resolve_artist_local_id(
         )
         .select(artists::id)
         .first(conn)
+        .await
         .optional()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn chrono_now() -> String {
-    // Simple ISO-8601 timestamp without pulling in chrono.
-    // std::time gives us seconds; format manually.
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    // We store as Unix timestamp string for simplicity; handlers can convert.
     secs.to_string()
 }
 

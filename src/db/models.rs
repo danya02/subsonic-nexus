@@ -4,8 +4,8 @@
 //! bitrate, replay gain, …) is stored as a JSON blob in `metadata_json` and
 //! deserialized only when building response payloads.
 
-use diesel::prelude::*;
 use crate::db::schema::*;
+use diesel::prelude::*;
 
 // ── upstream_servers ─────────────────────────────────────────────────────────
 

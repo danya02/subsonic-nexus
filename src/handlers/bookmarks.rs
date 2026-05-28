@@ -26,7 +26,10 @@ pub struct BookmarksResponse {
 
 /// GET/POST /rest/getBookmarks — no extra parameters
 pub async fn get_bookmarks(_auth: SubsonicAuth) -> SubsonicResponse<BookmarksResponse> {
-    BookmarksResponse { bookmarks: BookmarksBody { bookmark: vec![] } }.into()
+    BookmarksResponse {
+        bookmarks: BookmarksBody { bookmark: vec![] },
+    }
+    .into()
 }
 
 // --- createBookmark ---

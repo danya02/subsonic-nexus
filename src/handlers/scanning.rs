@@ -26,9 +26,7 @@ pub struct ScanStatusResponse {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async fn song_count(
-    conn: &mut crate::db::AsyncSqliteConnection,
-) -> Result<i64, SubsonicError> {
+async fn song_count(conn: &mut crate::db::AsyncSqliteConnection) -> Result<i64, SubsonicError> {
     songs::table
         .count()
         .get_result::<i64>(conn)
@@ -49,7 +47,10 @@ pub async fn get_scan_status(
     let count = song_count(&mut conn).await?;
     tracing::debug!(song_count = count, "getScanStatus");
     Ok(ScanStatusResponse {
-        scan_status: ScanStatus { scanning: false, count: Some(count) },
+        scan_status: ScanStatus {
+            scanning: false,
+            count: Some(count),
+        },
     }
     .into())
 }
@@ -70,7 +71,10 @@ pub async fn start_scan(
     });
 
     Ok(ScanStatusResponse {
-        scan_status: ScanStatus { scanning: true, count: Some(count) },
+        scan_status: ScanStatus {
+            scanning: true,
+            count: Some(count),
+        },
     }
     .into())
 }

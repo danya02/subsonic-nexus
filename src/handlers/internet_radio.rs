@@ -71,13 +71,14 @@ pub async fn get_internet_radio_stations(
         .into_iter()
         .map(|row| {
             // Try to deserialize stored metadata; fall back to a minimal station.
-            serde_json::from_str::<InternetRadioStation>(&row.metadata_json)
-                .unwrap_or_else(|_| InternetRadioStation {
+            serde_json::from_str::<InternetRadioStation>(&row.metadata_json).unwrap_or_else(|_| {
+                InternetRadioStation {
                     id: row.upstream_id.clone(),
                     name: row.name,
                     stream_url: row.stream_url,
                     home_page_url: None,
-                })
+                }
+            })
         })
         .collect();
 
@@ -104,7 +105,9 @@ pub async fn create_internet_radio_station(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<CreateInternetRadioStationParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("Internet radio management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "Internet radio management is not supported",
+    ))
 }
 
 // --- updateInternetRadioStation ---
@@ -123,7 +126,9 @@ pub async fn update_internet_radio_station(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<UpdateInternetRadioStationParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("Internet radio management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "Internet radio management is not supported",
+    ))
 }
 
 // --- deleteInternetRadioStation ---
@@ -138,5 +143,7 @@ pub async fn delete_internet_radio_station(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<DeleteInternetRadioStationParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("Internet radio management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "Internet radio management is not supported",
+    ))
 }

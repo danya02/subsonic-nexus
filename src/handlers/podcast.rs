@@ -156,7 +156,10 @@ pub async fn get_podcasts(
         }
     }
 
-    Ok(PodcastsResponse { podcasts: PodcastsBody { channel: channels } }.into())
+    Ok(PodcastsResponse {
+        podcasts: PodcastsBody { channel: channels },
+    }
+    .into())
 }
 
 // --- getNewestPodcasts ---
@@ -189,7 +192,10 @@ pub async fn get_newest_podcasts(
     .map_err(|e| SubsonicError::generic(e.to_string()))?;
 
     let episodes: Vec<PodcastEpisode> = episode_rows.iter().map(episode_from_row).collect();
-    Ok(NewestPodcastsResponse { newest_podcasts: NewestPodcastsBody { episode: episodes } }.into())
+    Ok(NewestPodcastsResponse {
+        newest_podcasts: NewestPodcastsBody { episode: episodes },
+    }
+    .into())
 }
 
 // --- getPodcastEpisode ---
@@ -224,7 +230,10 @@ pub async fn get_podcast_episode(
         SubsonicError::not_found(format!("Podcast episode not found: {}", params.id))
     })?;
 
-    Ok(PodcastEpisodeResponse { episode: episode_from_row(&row) }.into())
+    Ok(PodcastEpisodeResponse {
+        episode: episode_from_row(&row),
+    }
+    .into())
 }
 
 // --- createPodcastChannel ---
@@ -239,7 +248,9 @@ pub async fn create_podcast_channel(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<CreatePodcastChannelParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("Podcast management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "Podcast management is not supported",
+    ))
 }
 
 // --- deletePodcastChannel ---
@@ -254,7 +265,9 @@ pub async fn delete_podcast_channel(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<DeletePodcastChannelParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("Podcast management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "Podcast management is not supported",
+    ))
 }
 
 // --- deletePodcastEpisode ---
@@ -269,7 +282,9 @@ pub async fn delete_podcast_episode(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<DeletePodcastEpisodeParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("Podcast management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "Podcast management is not supported",
+    ))
 }
 
 // --- downloadPodcastEpisode ---
@@ -284,14 +299,18 @@ pub async fn download_podcast_episode(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<DownloadPodcastEpisodeParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("Podcast management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "Podcast management is not supported",
+    ))
 }
 
 /// GET/POST /rest/refreshPodcasts — no extra parameters
 pub async fn refresh_podcasts(
     _auth: SubsonicAuth,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("Podcast management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "Podcast management is not supported",
+    ))
 }
 
 // ---------------------------------------------------------------------------

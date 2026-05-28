@@ -1,7 +1,7 @@
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
-use crate::response::{SubsonicResponse, SubsonicResponseBody, API_VERSION, SERVER_TYPE};
+use crate::response::{API_VERSION, SERVER_TYPE, SubsonicResponse, SubsonicResponseBody};
 
 /// Subsonic API error codes as defined by the OpenSubsonic spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +35,10 @@ pub struct SubsonicError {
 
 impl SubsonicError {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 
     pub fn not_found(message: impl Into<String>) -> Self {

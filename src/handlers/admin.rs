@@ -46,26 +46,31 @@ async fn build_index_html(state: &AppState) -> Result<String, Box<dyn std::error
         .await?;
 
     let total_songs: i64 = songs::table.count().get_result(&mut conn).await?;
-    let total_podcasts: i64 = podcast_channels::table.count().get_result(&mut conn).await?;
-    let total_episodes: i64 = podcast_episodes::table.count().get_result(&mut conn).await?;
+    let total_podcasts: i64 = podcast_channels::table
+        .count()
+        .get_result(&mut conn)
+        .await?;
+    let total_episodes: i64 = podcast_episodes::table
+        .count()
+        .get_result(&mut conn)
+        .await?;
     let total_radio: i64 = internet_radio_stations::table
         .count()
         .get_result(&mut conn)
         .await?;
 
     // ── Per-server info from the DB ────────────────────────────────────────
-    let db_servers: Vec<(i32, String, String, i32, Option<String>)> =
-        upstream_servers::table
-            .select((
-                upstream_servers::id,
-                upstream_servers::name,
-                upstream_servers::url,
-                upstream_servers::priority,
-                upstream_servers::last_scanned_at,
-            ))
-            .order(upstream_servers::priority.asc())
-            .load(&mut conn)
-            .await?;
+    let db_servers: Vec<(i32, String, String, i32, Option<String>)> = upstream_servers::table
+        .select((
+            upstream_servers::id,
+            upstream_servers::name,
+            upstream_servers::url,
+            upstream_servers::priority,
+            upstream_servers::last_scanned_at,
+        ))
+        .order(upstream_servers::priority.asc())
+        .load(&mut conn)
+        .await?;
 
     // Per-server row counts
     let server_artist_counts: Vec<(i32, i64)> = artists::table

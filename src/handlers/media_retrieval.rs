@@ -8,8 +8,7 @@ use crate::auth::SubsonicAuth;
 use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
 use crate::nexus::{
-    IdTemplate, build_upstream_url, get_conn, parse_cover_art_id,
-    query_song_by_nexus_id,
+    IdTemplate, build_upstream_url, get_conn, parse_cover_art_id, query_song_by_nexus_id,
 };
 use crate::response::SubsonicResponse;
 use crate::state::AppState;
@@ -96,7 +95,10 @@ async fn proxy_upstream(url: &str) -> Result<Response, SubsonicError> {
         .map_err(|e| SubsonicError::generic(format!("Upstream request failed: {e}")))?;
 
     let status = StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::OK);
-    tracing::debug!(status = upstream.status().as_u16(), "proxy_upstream: response received");
+    tracing::debug!(
+        status = upstream.status().as_u16(),
+        "proxy_upstream: response received"
+    );
     let mut headers = HeaderMap::new();
     for (name, value) in upstream.headers() {
         if let (Ok(n), Ok(v)) = (
@@ -184,26 +186,11 @@ pub async fn get_cover_art(
     QueryOrForm(params): QueryOrForm<GetCoverArtParams>,
 ) -> Result<Response, SubsonicError> {
     tracing::debug!(id = %params.id, "getCoverArt: parsing cover art id");
-    let (server_db_id, upstream_cover_art_id) = parse_cover_art_id(&params.id).ok_or_else(|| {
-        tracing::warn!(id = %params.id, "getCoverArt: invalid id (expected {{server_db_id}}:{{upstream_id}} format)");
+    let (server_name, upstream_cover_art_id) = parse_cover_art_id(&params.id).ok_or_else(|| {
+        tracing::warn!(id = %params.id, "getCoverArt: invalid id (expected {{server_name}}:{{upstream_id}} format)");
         SubsonicError::not_found(format!("Invalid cover art id: {}", params.id))
     })?;
-    tracing::debug!(server_db_id, upstream_cover_art_id, "getCoverArt: parsed ok");
-
-    // Find server config by DB id.
-    let mut conn = get_conn(&state.pool).await?;
-    use crate::db::schema::upstream_servers;
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    let server_name: String = upstream_servers::table
-        .filter(upstream_servers::id.eq(server_db_id))
-        .select(upstream_servers::name)
-        .first(&mut conn)
-        .await
-        .map_err(|_| {
-            tracing::warn!(server_db_id, "getCoverArt: server db id not found");
-            SubsonicError::not_found(format!("Server {server_db_id} not found"))
-        })?;
+    tracing::debug!(server_name, upstream_cover_art_id, "getCoverArt: parsed ok");
 
     let server_cfg = state
         .config
@@ -244,7 +231,11 @@ pub async fn get_lyrics(
     QueryOrForm(_params): QueryOrForm<GetLyricsParams>,
 ) -> SubsonicResponse<LyricsResponse> {
     LyricsResponse {
-        lyrics: Lyrics { artist: None, title: None, value: None },
+        lyrics: Lyrics {
+            artist: None,
+            title: None,
+            value: None,
+        },
     }
     .into()
 }
@@ -263,7 +254,9 @@ pub async fn get_lyrics_by_song_id(
     QueryOrForm(_params): QueryOrForm<GetLyricsBySongIdParams>,
 ) -> SubsonicResponse<LyricsListResponse> {
     LyricsListResponse {
-        lyrics_list: LyricsList { structured_lyrics: vec![] },
+        lyrics_list: LyricsList {
+            structured_lyrics: vec![],
+        },
     }
     .into()
 }

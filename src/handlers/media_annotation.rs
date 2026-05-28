@@ -5,7 +5,9 @@ use serde::Deserialize;
 
 use crate::auth::SubsonicAuth;
 use crate::extract::QueryOrForm;
-use crate::nexus::{IdTemplate, build_upstream_url, get_conn, parse_entity_id, query_song_by_nexus_id};
+use crate::nexus::{
+    IdTemplate, build_upstream_url, get_conn, parse_entity_id, query_song_by_nexus_id,
+};
 use crate::response::{Empty, SubsonicResponse};
 use crate::state::AppState;
 
@@ -81,7 +83,10 @@ pub async fn unstar(
 /// translating nexus IDs to upstream IDs.
 async fn proxy_annotation(state: &AppState, endpoint: &str, params: StarParams) {
     let Some(ref target_name) = state.config.nexus.write_target else {
-        tracing::debug!(endpoint, "proxy_annotation: no write_target configured, skipping");
+        tracing::debug!(
+            endpoint,
+            "proxy_annotation: no write_target configured, skipping"
+        );
         return;
     };
     let Some(server_cfg) = state.config.server_by_name(target_name) else {
@@ -119,10 +124,12 @@ async fn proxy_annotation(state: &AppState, endpoint: &str, params: StarParams) 
             Some((it.next()?.to_owned(), it.next()?.to_owned()))
         })
         .collect();
-    let ref_pairs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let ref_pairs: Vec<(&str, &str)> = pairs
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
 
     proxy_write(server_cfg, endpoint, &ref_pairs).await;
-
 }
 
 // ---------------------------------------------------------------------------
@@ -148,10 +155,11 @@ pub async fn set_rating(
             let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
             let parsed = parse_entity_id(template, &params.id);
             let rating_s = params.rating.to_string();
-            proxy_write(server_cfg, "setRating", &[
-                ("id", &parsed.upstream_id),
-                ("rating", &rating_s),
-            ])
+            proxy_write(
+                server_cfg,
+                "setRating",
+                &[("id", &parsed.upstream_id), ("rating", &rating_s)],
+            )
             .await;
         }
     }

@@ -18,12 +18,11 @@ mod tests;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use opensubsonic::{Auth, Client};
-use serde_json;
 
 use crate::config::ServerConfig;
-use crate::db::{AsyncSqliteConnection, DbPool};
 use crate::db::models::*;
 use crate::db::schema::*;
+use crate::db::{AsyncSqliteConnection, DbPool};
 use template::{Template, eval_album, eval_artist};
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -120,19 +119,16 @@ pub async fn delete_server_data(
     let artists_deleted = diesel::delete(artists::table.filter(artists::server_id.eq(server_id)))
         .execute(conn)
         .await?;
-    let podcast_episodes_deleted = diesel::delete(
-        podcast_episodes::table.filter(podcast_episodes::server_id.eq(server_id)),
-    )
-    .execute(conn)
-    .await?;
-    let podcast_channels_deleted = diesel::delete(
-        podcast_channels::table.filter(podcast_channels::server_id.eq(server_id)),
-    )
-    .execute(conn)
-    .await?;
+    let podcast_episodes_deleted =
+        diesel::delete(podcast_episodes::table.filter(podcast_episodes::server_id.eq(server_id)))
+            .execute(conn)
+            .await?;
+    let podcast_channels_deleted =
+        diesel::delete(podcast_channels::table.filter(podcast_channels::server_id.eq(server_id)))
+            .execute(conn)
+            .await?;
     let radio_deleted = diesel::delete(
-        internet_radio_stations::table
-            .filter(internet_radio_stations::server_id.eq(server_id)),
+        internet_radio_stations::table.filter(internet_radio_stations::server_id.eq(server_id)),
     )
     .execute(conn)
     .await?;
@@ -239,13 +235,11 @@ pub async fn scan_server(
                     tracing::debug!(song_id = %song.id, cover_art = ?song.cover_art, "storing song metadata");
                     // Resolve artist FK: prefer the song's own artist_id if present.
                     let song_artist_id = match song.artist_id.as_deref() {
-                        Some(uid) => {
-                            resolve_artist_local_id(conn, server_id, uid)
-                                .await
-                                .ok()
-                                .flatten()
-                                .or(Some(local_artist_id))
-                        }
+                        Some(uid) => resolve_artist_local_id(conn, server_id, uid)
+                            .await
+                            .ok()
+                            .flatten()
+                            .or(Some(local_artist_id)),
                         None => Some(local_artist_id),
                     };
 

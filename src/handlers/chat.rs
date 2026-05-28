@@ -37,7 +37,12 @@ pub async fn get_chat_messages(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<GetChatMessagesParams>,
 ) -> SubsonicResponse<ChatMessagesResponse> {
-    ChatMessagesResponse { chat_messages: ChatMessagesBody { chat_message: vec![] } }.into()
+    ChatMessagesResponse {
+        chat_messages: ChatMessagesBody {
+            chat_message: vec![],
+        },
+    }
+    .into()
 }
 
 // --- addChatMessage ---

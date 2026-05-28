@@ -8,7 +8,7 @@ use crate::auth::SubsonicAuth;
 use crate::config::ServerConfig;
 use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
-use crate::nexus::{IdTemplate, build_upstream_url, parse_entity_id};
+use crate::nexus::{IdTemplate, build_cover_art_id, build_upstream_url, parse_entity_id};
 use crate::response::{Empty, SubsonicResponse};
 use crate::state::AppState;
 
@@ -49,11 +49,11 @@ pub struct PlayQueueByIndexResponse {
 // ---------------------------------------------------------------------------
 
 /// Resolve the write_target server config, or return `not_authorized`.
-fn write_target_cfg<'a>(
-    state: &'a AppState,
-) -> Result<&'a ServerConfig, SubsonicError> {
+fn write_target_cfg<'a>(state: &'a AppState) -> Result<&'a ServerConfig, SubsonicError> {
     let name = state.config.nexus.write_target.as_deref().ok_or_else(|| {
-        SubsonicError::not_authorized("No write_target configured; playlist operations are read-only")
+        SubsonicError::not_authorized(
+            "No write_target configured; playlist operations are read-only",
+        )
     })?;
     state.config.server_by_name(name).ok_or_else(|| {
         SubsonicError::not_authorized(format!("write_target server '{name}' not found in config"))
@@ -142,7 +142,10 @@ pub async fn get_playlists(
     QueryOrForm(params): QueryOrForm<GetPlaylistsParams>,
 ) -> Result<SubsonicResponse<PlaylistsResponse>, SubsonicError> {
     let Ok(server_cfg) = write_target_cfg(&state) else {
-        return Ok(PlaylistsResponse { playlists: PlaylistsBody { playlist: vec![] } }.into());
+        return Ok(PlaylistsResponse {
+            playlists: PlaylistsBody { playlist: vec![] },
+        }
+        .into());
     };
 
     let username_s;
@@ -156,13 +159,22 @@ pub async fn get_playlists(
     let body = proxy_get(server_cfg, "getPlaylists", &extra).await?;
     let resp = subsonic_inner(body)?;
 
-    let playlists: Vec<Playlist> = resp
+    let mut playlists: Vec<Playlist> = resp
         .get("playlists")
         .and_then(|p| p.get("playlist"))
         .and_then(|a| serde_json::from_value(a.clone()).ok())
         .unwrap_or_default();
 
-    Ok(PlaylistsResponse { playlists: PlaylistsBody { playlist: playlists } }.into())
+    playlists.iter_mut().for_each(|p| {
+        p.cover_art = (p.cover_art.as_ref()).map(|v| build_cover_art_id(&server_cfg.name, v));
+    });
+
+    Ok(PlaylistsResponse {
+        playlists: PlaylistsBody {
+            playlist: playlists,
+        },
+    }
+    .into())
 }
 
 // --- getPlaylist ---
@@ -183,13 +195,23 @@ pub async fn get_playlist(
     let body = proxy_get(server_cfg, "getPlaylist", &[("id", &params.id)]).await?;
     let resp = subsonic_inner(body)?;
 
-    let playlist: PlaylistWithSongs = resp
+    let mut playlist: PlaylistWithSongs = resp
         .get("playlist")
         .ok_or_else(|| SubsonicError::not_found(format!("Playlist not found: {}", params.id)))
         .and_then(|p| {
-            serde_json::from_value(p.clone())
-                .map_err(|e| SubsonicError::generic(e.to_string()))
+            serde_json::from_value(p.clone()).map_err(|e| SubsonicError::generic(e.to_string()))
         })?;
+
+    playlist.cover_art = playlist
+        .cover_art
+        .as_ref()
+        .map(|v| build_cover_art_id(&server_cfg.name, v));
+    playlist.entry.iter_mut().for_each(|e| {
+        e.cover_art = e
+            .cover_art
+            .as_ref()
+            .map(|v| build_cover_art_id(&server_cfg.name, v));
+    });
 
     Ok(PlaylistResponse { playlist }.into())
 }
@@ -238,13 +260,23 @@ pub async fn create_playlist(
     let body = proxy_get(server_cfg, "createPlaylist", &extra).await?;
     let resp = subsonic_inner(body)?;
 
-    let playlist: PlaylistWithSongs = resp
+    let mut playlist: PlaylistWithSongs = resp
         .get("playlist")
         .ok_or_else(|| SubsonicError::generic("No playlist in upstream response"))
         .and_then(|p| {
-            serde_json::from_value(p.clone())
-                .map_err(|e| SubsonicError::generic(e.to_string()))
+            serde_json::from_value(p.clone()).map_err(|e| SubsonicError::generic(e.to_string()))
         })?;
+
+    playlist.cover_art = playlist
+        .cover_art
+        .as_ref()
+        .map(|v| build_cover_art_id(&server_cfg.name, v));
+    playlist.entry.iter_mut().for_each(|e| {
+        e.cover_art = e
+            .cover_art
+            .as_ref()
+            .map(|v| build_cover_art_id(&server_cfg.name, v));
+    });
 
     Ok(PlaylistResponse { playlist }.into())
 }
@@ -274,8 +306,11 @@ pub async fn update_playlist(
     let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
 
     let upstream_add_ids = translate_ids(template, &params.song_id_to_add);
-    let remove_strs: Vec<String> =
-        params.song_index_to_remove.iter().map(|i| i.to_string()).collect();
+    let remove_strs: Vec<String> = params
+        .song_index_to_remove
+        .iter()
+        .map(|i| i.to_string())
+        .collect();
 
     let name_s = params.name.as_deref().unwrap_or("");
     let comment_s = params.comment.as_deref().unwrap_or("");
@@ -401,8 +436,12 @@ pub async fn save_play_queue(
             .build()
             .unwrap_or_default();
         match client.get(&url).send().await {
-            Ok(r) => tracing::info!(server = %server_cfg.name, status = %r.status(), "playlist proxy: savePlayQueue ok"),
-            Err(e) => tracing::warn!(server = %server_cfg.name, error = %e, "playlist proxy: savePlayQueue failed"),
+            Ok(r) => {
+                tracing::info!(server = %server_cfg.name, status = %r.status(), "playlist proxy: savePlayQueue ok")
+            }
+            Err(e) => {
+                tracing::warn!(server = %server_cfg.name, error = %e, "playlist proxy: savePlayQueue failed")
+            }
         }
     }
     Empty {}.into()
@@ -446,7 +485,10 @@ pub async fn save_play_queue_by_index(
     if let Ok(server_cfg) = write_target_cfg(&state) {
         let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
         let upstream_ids = translate_ids(template, &params.id);
-        let current_index_s = params.current_index.map(|i| i.to_string()).unwrap_or_default();
+        let current_index_s = params
+            .current_index
+            .map(|i| i.to_string())
+            .unwrap_or_default();
         let position_s = params.position.map(|p| p.to_string()).unwrap_or_default();
 
         let id_pairs: Vec<(String, String)> = upstream_ids
@@ -472,8 +514,12 @@ pub async fn save_play_queue_by_index(
             .build()
             .unwrap_or_default();
         match client.get(&url).send().await {
-            Ok(r) => tracing::info!(server = %server_cfg.name, status = %r.status(), "playlist proxy: savePlayQueueByIndex ok"),
-            Err(e) => tracing::warn!(server = %server_cfg.name, error = %e, "playlist proxy: savePlayQueueByIndex failed"),
+            Ok(r) => {
+                tracing::info!(server = %server_cfg.name, status = %r.status(), "playlist proxy: savePlayQueueByIndex ok")
+            }
+            Err(e) => {
+                tracing::warn!(server = %server_cfg.name, error = %e, "playlist proxy: savePlayQueueByIndex failed")
+            }
         }
     }
     Empty {}.into()

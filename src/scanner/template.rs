@@ -39,7 +39,9 @@ impl Template {
     /// simply evaluate to an empty string so users get a usable (if surprising)
     /// result rather than a hard failure.
     pub fn parse(src: &str) -> Self {
-        Self { segments: parse_segments(src) }
+        Self {
+            segments: parse_segments(src),
+        }
     }
 
     /// Evaluate the template against a set of named fields.
@@ -120,10 +122,15 @@ fn parse_segments(src: &str) -> Vec<Segment> {
             let mut depth = 1usize;
             for c in chars.by_ref() {
                 match c {
-                    '{' => { depth += 1; inner.push(c); }
+                    '{' => {
+                        depth += 1;
+                        inner.push(c);
+                    }
                     '}' => {
                         depth -= 1;
-                        if depth == 0 { break; }
+                        if depth == 0 {
+                            break;
+                        }
                         inner.push(c);
                     }
                     _ => inner.push(c),
@@ -154,7 +161,11 @@ fn parse_field(inner: &str) -> Segment {
         }
     } else {
         let (name, transforms) = parse_field_and_transforms(inner);
-        Segment::Field { name, transforms, fallback: vec![] }
+        Segment::Field {
+            name,
+            transforms,
+            fallback: vec![],
+        }
     }
 }
 
@@ -197,7 +208,11 @@ fn eval_segments(segments: &[Segment], lookup: &impl Fn(&str) -> Option<String>)
     for seg in segments {
         match seg {
             Segment::Literal(s) => out.push_str(s),
-            Segment::Field { name, transforms, fallback } => {
+            Segment::Field {
+                name,
+                transforms,
+                fallback,
+            } => {
                 let raw = lookup(name);
                 let value = raw.map(|v| apply_transforms(&v, transforms));
                 if let Some(v) = value.filter(|v| !v.is_empty()) {
@@ -236,17 +251,21 @@ fn ascii_normalize(s: &str) -> String {
             } else {
                 // Map a few very common accented chars; others are dropped.
                 Some(match c {
-                    'à'|'á'|'â'|'ã'|'ä'|'å'|'À'|'Á'|'Â'|'Ã'|'Ä'|'Å' => 'a',
-                    'è'|'é'|'ê'|'ë'|'È'|'É'|'Ê'|'Ë' => 'e',
-                    'ì'|'í'|'î'|'ï'|'Ì'|'Í'|'Î'|'Ï' => 'i',
-                    'ò'|'ó'|'ô'|'õ'|'ö'|'ø'|'Ò'|'Ó'|'Ô'|'Õ'|'Ö'|'Ø' => 'o',
-                    'ù'|'ú'|'û'|'ü'|'Ù'|'Ú'|'Û'|'Ü' => 'u',
-                    'ý'|'ÿ'|'Ý' => 'y',
-                    'ñ'|'Ñ' => 'n',
-                    'ç'|'Ç' => 'c',
+                    'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' => {
+                        'a'
+                    }
+                    'è' | 'é' | 'ê' | 'ë' | 'È' | 'É' | 'Ê' | 'Ë' => 'e',
+                    'ì' | 'í' | 'î' | 'ï' | 'Ì' | 'Í' | 'Î' | 'Ï' => 'i',
+                    'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'Ø' => {
+                        'o'
+                    }
+                    'ù' | 'ú' | 'û' | 'ü' | 'Ù' | 'Ú' | 'Û' | 'Ü' => 'u',
+                    'ý' | 'ÿ' | 'Ý' => 'y',
+                    'ñ' | 'Ñ' => 'n',
+                    'ç' | 'Ç' => 'c',
                     'ß' => return Some('s'), // expands to 'ss' ideally, but 's' is fine
-                    'æ'|'Æ' => 'a',
-                    'œ'|'Œ' => 'o',
+                    'æ' | 'Æ' => 'a',
+                    'œ' | 'Œ' => 'o',
                     _ => return None, // drop unknown non-ASCII
                 })
             }
@@ -271,7 +290,13 @@ mod tests {
     use super::*;
 
     fn field<'a>(name: &'a str, value: &'a str) -> impl Fn(&str) -> Option<String> + 'a {
-        move |f| if f == name { Some(value.to_owned()) } else { None }
+        move |f| {
+            if f == name {
+                Some(value.to_owned())
+            } else {
+                None
+            }
+        }
     }
 
     #[test]
@@ -289,7 +314,10 @@ mod tests {
     #[test]
     fn field_with_transforms() {
         let t = Template::parse("{name|lowercase|trim}");
-        assert_eq!(t.eval(&field("name", "  Daft Punk  ")), "  daft punk  ".trim());
+        assert_eq!(
+            t.eval(&field("name", "  Daft Punk  ")),
+            "  daft punk  ".trim()
+        );
         // lowercase first, then trim
         let t2 = Template::parse("{name|trim|lowercase}");
         assert_eq!(t2.eval(&field("name", "  Daft Punk  ")), "daft punk");
@@ -300,7 +328,11 @@ mod tests {
         let t = Template::parse("{music_brainz_id:-{name|lowercase|trim}}");
         // No MBID → falls back to normalized name
         assert_eq!(
-            t.eval(&|f| if f == "name" { Some("Daft Punk".to_owned()) } else { None }),
+            t.eval(&|f| if f == "name" {
+                Some("Daft Punk".to_owned())
+            } else {
+                None
+            }),
             "daft punk"
         );
         // With MBID → uses it directly

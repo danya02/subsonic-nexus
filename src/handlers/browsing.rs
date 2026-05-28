@@ -13,10 +13,10 @@ use crate::db::schema::upstream_servers;
 use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
 use crate::nexus::{
-    IdTemplate, album_id3_from_canonical, artist_id3_from_canonical,
-    artists_to_id3_response, build_entity_id, child_from_song_row, get_conn,
-    query_album_by_nexus_id, query_albums_for_artist, query_artist_by_nexus_id,
-    query_canonical_artists, query_song_by_nexus_id, query_songs_for_album,
+    IdTemplate, album_id3_from_canonical, artist_id3_from_canonical, artists_to_id3_response,
+    build_entity_id, child_from_song_row, get_conn, query_album_by_nexus_id,
+    query_albums_for_artist, query_artist_by_nexus_id, query_canonical_artists,
+    query_song_by_nexus_id, query_songs_for_album,
 };
 use crate::response::SubsonicResponse;
 use crate::state::AppState;
@@ -133,11 +133,16 @@ pub async fn get_music_folders(
     tracing::debug!(folder_count = rows.len(), "getMusicFolders");
     let folders = rows
         .into_iter()
-        .map(|(id, name)| MusicFolder { id: id as i64, name: Some(name) })
+        .map(|(id, name)| MusicFolder {
+            id: id as i64,
+            name: Some(name),
+        })
         .collect();
 
     Ok(MusicFoldersResponse {
-        music_folders: MusicFoldersBody { music_folder: folders },
+        music_folders: MusicFoldersBody {
+            music_folder: folders,
+        },
     }
     .into())
 }
@@ -242,12 +247,20 @@ pub async fn get_music_directory(
             let artists = query_canonical_artists(&mut conn, Some(server_id))
                 .await
                 .map_err(|e| SubsonicError::generic(e.to_string()))?;
-            tracing::debug!(server_id, artist_count = artists.len(), "getMusicDirectory: listing artists for server");
+            tracing::debug!(
+                server_id,
+                artist_count = artists.len(),
+                "getMusicDirectory: listing artists for server"
+            );
             let children: Vec<Child> = artists
                 .iter()
                 .map(|row| {
-                    let nid =
-                        build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
+                    let nid = build_entity_id(
+                        template,
+                        &row.server_name,
+                        row.server_id,
+                        &row.upstream_id,
+                    );
                     Child {
                         id: nid,
                         parent: Some(id.clone()),
@@ -285,7 +298,8 @@ pub async fn get_music_directory(
         let children: Vec<Child> = albums
             .iter()
             .map(|row| {
-                let nid = build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
+                let nid =
+                    build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
                 let mut al = album_id3_from_canonical(row, cfg);
                 Child {
                     id: nid,
@@ -400,12 +414,19 @@ pub async fn get_genres(
                 .iter()
                 .find(|a| a.genre == row.genre)
                 .map_or(0, |a| a.album_count);
-            Genre { name: row.genre, song_count: row.song_count, album_count }
+            Genre {
+                name: row.genre,
+                song_count: row.song_count,
+                album_count,
+            }
         })
         .collect();
 
     tracing::debug!(genre_count = genres.len(), "getGenres");
-    Ok(GenresResponse { genres: GenresBody { genre: genres } }.into())
+    Ok(GenresResponse {
+        genres: GenresBody { genre: genres },
+    }
+    .into())
 }
 
 // --- getArtists ---
@@ -430,10 +451,16 @@ pub async fn get_artists(
 
     let cfg = &state.config.nexus;
     tracing::debug!(server_filter = ?server_filter, artist_count = rows.len(), "getArtists");
-    let artists: Vec<_> = rows.iter().map(|r| artist_id3_from_canonical(r, cfg)).collect();
+    let artists: Vec<_> = rows
+        .iter()
+        .map(|r| artist_id3_from_canonical(r, cfg))
+        .collect();
     let artists_id3 = artists_to_id3_response(artists);
 
-    Ok(ArtistsResponse { artists: artists_id3 }.into())
+    Ok(ArtistsResponse {
+        artists: artists_id3,
+    }
+    .into())
 }
 
 // --- getArtist ---
@@ -466,7 +493,10 @@ pub async fn get_artist(
         .map_err(|e| SubsonicError::generic(e.to_string()))?;
     let album_count = albums.len() as i64;
     tracing::debug!(artist_name = %row.name, album_count, "getArtist: found");
-    let album_list: Vec<_> = albums.iter().map(|a| album_id3_from_canonical(a, cfg)).collect();
+    let album_list: Vec<_> = albums
+        .iter()
+        .map(|a| album_id3_from_canonical(a, cfg))
+        .collect();
 
     Ok(ArtistResponse {
         artist: ArtistWithAlbumsId3 {
@@ -575,7 +605,10 @@ pub async fn get_song(
         .ok_or_else(|| SubsonicError::not_found(format!("Song not found: {}", params.id)))?;
 
     tracing::debug!(song_title = %row.title, "getSong: found");
-    Ok(SongResponse { song: child_from_song_row(&row, cfg) }.into())
+    Ok(SongResponse {
+        song: child_from_song_row(&row, cfg),
+    }
+    .into())
 }
 
 /// GET/POST /rest/getVideos — no extra parameters
@@ -583,7 +616,10 @@ pub async fn get_videos(
     _auth: SubsonicAuth,
     _state: State<AppState>,
 ) -> SubsonicResponse<VideosResponse> {
-    VideosResponse { videos: VideosBody { video: vec![] } }.into()
+    VideosResponse {
+        videos: VideosBody { video: vec![] },
+    }
+    .into()
 }
 
 // --- getVideoInfo ---
@@ -701,7 +737,11 @@ pub async fn get_album_info2(
 
 fn index_letter(name: &str) -> String {
     let stripped = strip_articles(name);
-    let first = stripped.chars().next().or_else(|| name.chars().next()).unwrap_or('#');
+    let first = stripped
+        .chars()
+        .next()
+        .or_else(|| name.chars().next())
+        .unwrap_or('#');
     if first.is_ascii_alphabetic() {
         first.to_ascii_uppercase().to_string()
     } else {

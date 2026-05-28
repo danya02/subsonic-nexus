@@ -81,34 +81,38 @@ pub fn parse_entity_id(template: IdTemplate, nexus_id: &str) -> ParsedId {
                 let upstream = &nexus_id[colon + 1..];
                 let hint = match template {
                     IdTemplate::ServerNamePrefix => Some(ServerHint::Name(prefix.to_owned())),
-                    IdTemplate::ServerIdPrefix => {
-                        prefix.parse::<i32>().ok().map(ServerHint::DbId)
-                    }
+                    IdTemplate::ServerIdPrefix => prefix.parse::<i32>().ok().map(ServerHint::DbId),
                     _ => unreachable!(),
                 };
-                ParsedId { server_hint: hint, upstream_id: upstream.to_owned() }
+                ParsedId {
+                    server_hint: hint,
+                    upstream_id: upstream.to_owned(),
+                }
             } else {
                 // Malformed — fall back to treating the whole string as upstream ID.
                 tracing::debug!(nexus_id, template = ?template, "parse_entity_id: no colon in prefixed ID, treating as upstream_id");
-                ParsedId { server_hint: None, upstream_id: nexus_id.to_owned() }
+                ParsedId {
+                    server_hint: None,
+                    upstream_id: nexus_id.to_owned(),
+                }
             }
         }
     }
 }
 
-/// Build a cover-art ID.  Always uses `{server_db_id}:{upstream_cover_art}` format
+/// Build a cover-art ID.  Always uses `{server_name}:{upstream_cover_art}` format
 /// regardless of the entity-ID template, because cover art needs the server
 /// to be unambiguous for proxying.
-pub fn build_cover_art_id(server_db_id: i32, upstream_cover_art: &str) -> String {
-    format!("{server_db_id}:{upstream_cover_art}")
+pub fn build_cover_art_id(server_name: &str, upstream_cover_art: &str) -> String {
+    format!("{server_name}:{upstream_cover_art}")
 }
 
-/// Parse a nexus cover-art ID back to `(server_db_id, upstream_cover_art_id)`.
-pub fn parse_cover_art_id(nexus_id: &str) -> Option<(i32, &str)> {
+/// Parse a nexus cover-art ID back to `(server_name, upstream_cover_art_id)`.
+pub fn parse_cover_art_id(nexus_id: &str) -> Option<(&str, &str)> {
     let colon = nexus_id.find(':')?;
-    let server_id = nexus_id[..colon].parse::<i32>().ok()?;
+    let server_name = &nexus_id[..colon];
     let cover_art = &nexus_id[colon + 1..];
-    Some((server_id, cover_art))
+    Some((server_name, cover_art))
 }
 
 // ── Upstream URL builder ──────────────────────────────────────────────────────
@@ -261,9 +265,11 @@ pub async fn query_canonical_artists(
         .load(conn)
         .await?
     } else {
-        sql_query(format!("{CANONICAL_ARTIST_SQL} ORDER BY ar.name COLLATE NOCASE"))
-            .load(conn)
-            .await?
+        sql_query(format!(
+            "{CANONICAL_ARTIST_SQL} ORDER BY ar.name COLLATE NOCASE"
+        ))
+        .load(conn)
+        .await?
     };
     tracing::debug!(server_filter = ?server_db_id, count = rows.len(), "query_canonical_artists");
     Ok(rows)
@@ -335,7 +341,11 @@ pub async fn query_albums_for_artist(
     ))
     .load(conn)
     .await?;
-    tracing::debug!(artist_agg_key, count = rows.len(), "query_albums_for_artist");
+    tracing::debug!(
+        artist_agg_key,
+        count = rows.len(),
+        "query_albums_for_artist"
+    );
     Ok(rows)
 }
 
@@ -438,8 +448,7 @@ pub async fn query_song_by_nexus_id(
 /// ID and cover-art ID to use nexus IDs.
 pub fn artist_id3_from_canonical(row: &CanonicalArtist, cfg: &NexusConfig) -> ArtistId3 {
     let template = IdTemplate::from_config(&cfg.entity_id_template);
-    let nexus_id =
-        build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
+    let nexus_id = build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
 
     let mut a: ArtistId3 =
         serde_json::from_str(&row.metadata_json).unwrap_or_else(|e| {
@@ -460,7 +469,7 @@ pub fn artist_id3_from_canonical(row: &CanonicalArtist, cfg: &NexusConfig) -> Ar
     a.id = nexus_id;
     tracing::debug!(upstream_id = %row.upstream_id, server_id = row.server_id, upstream_cover_art = ?a.cover_art, "artist_id3_from_canonical: rewriting cover_art");
     if let Some(ref ca) = a.cover_art.clone() {
-        a.cover_art = Some(build_cover_art_id(row.server_id, ca));
+        a.cover_art = Some(build_cover_art_id(&row.server_name, ca));
     }
     a
 }
@@ -468,8 +477,7 @@ pub fn artist_id3_from_canonical(row: &CanonicalArtist, cfg: &NexusConfig) -> Ar
 /// Convert a canonical album DB row to an `AlbumId3`, rewriting IDs.
 pub fn album_id3_from_canonical(row: &CanonicalAlbum, cfg: &NexusConfig) -> AlbumId3 {
     let template = IdTemplate::from_config(&cfg.entity_id_template);
-    let nexus_id =
-        build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
+    let nexus_id = build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
 
     let mut al: AlbumId3 =
         serde_json::from_str(&row.metadata_json).unwrap_or_else(|e| {
@@ -509,7 +517,7 @@ pub fn album_id3_from_canonical(row: &CanonicalAlbum, cfg: &NexusConfig) -> Albu
     al.id = nexus_id;
     tracing::debug!(upstream_id = %row.upstream_id, server_id = row.server_id, upstream_cover_art = ?al.cover_art, "album_id3_from_canonical: rewriting cover_art");
     if let Some(ref ca) = al.cover_art.clone() {
-        al.cover_art = Some(build_cover_art_id(row.server_id, ca));
+        al.cover_art = Some(build_cover_art_id(&row.server_name, ca));
     }
     // Rewrite artist_id to nexus ID if it's an upstream ID.
     // With UpstreamOnly template this is already correct.
@@ -529,8 +537,7 @@ pub fn album_id3_from_canonical(row: &CanonicalAlbum, cfg: &NexusConfig) -> Albu
 /// Convert a song DB row to a `Child`, rewriting IDs.
 pub fn child_from_song_row(row: &SongRow, cfg: &NexusConfig) -> Child {
     let template = IdTemplate::from_config(&cfg.entity_id_template);
-    let nexus_id =
-        build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
+    let nexus_id = build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
 
     let mut child: Child =
         serde_json::from_str(&row.metadata_json).unwrap_or_else(|e| {
@@ -595,16 +602,24 @@ pub fn child_from_song_row(row: &SongRow, cfg: &NexusConfig) -> Child {
     child.id = nexus_id;
     tracing::debug!(upstream_id = %row.upstream_id, server_id = row.server_id, upstream_cover_art = ?child.cover_art, "child_from_song_row: rewriting cover_art");
     if let Some(ref ca) = child.cover_art.clone() {
-        child.cover_art = Some(build_cover_art_id(row.server_id, ca));
+        child.cover_art = Some(build_cover_art_id(&row.server_name, ca));
     }
     if template != IdTemplate::UpstreamOnly {
         if let Some(ref aid) = child.artist_id.clone() {
-            child.artist_id =
-                Some(build_entity_id(template, &row.server_name, row.server_id, aid));
+            child.artist_id = Some(build_entity_id(
+                template,
+                &row.server_name,
+                row.server_id,
+                aid,
+            ));
         }
         if let Some(ref alid) = child.album_id.clone() {
-            child.album_id =
-                Some(build_entity_id(template, &row.server_name, row.server_id, alid));
+            child.album_id = Some(build_entity_id(
+                template,
+                &row.server_name,
+                row.server_id,
+                alid,
+            ));
         }
     }
     child
@@ -631,7 +646,10 @@ pub fn artists_to_id3_response(artists: Vec<ArtistId3>) -> ArtistsId3 {
         .map(|(name, artist)| IndexId3 { name, artist })
         .collect();
 
-    ArtistsId3 { ignored_articles: None, index }
+    ArtistsId3 {
+        ignored_articles: None,
+        index,
+    }
 }
 
 /// Derive the index letter (A–Z or "#") for an artist name.
@@ -666,8 +684,7 @@ fn strip_articles(name: &str) -> &str {
 // ── Music folder helpers ──────────────────────────────────────────────────────
 
 /// Convert upstream server DB rows to `MusicFolder` list.
-pub fn music_folders_from_servers(
-    servers: &[(i32, String)], // (db_id, name)
+pub fn music_folders_from_servers(servers: &[(i32, String)], // (db_id, name)
 ) -> Vec<MusicFolder> {
     servers
         .iter()

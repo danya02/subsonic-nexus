@@ -6,8 +6,8 @@ pub mod schema;
 use diesel::SqliteConnection;
 use diesel_async::AsyncConnection as _;
 use diesel_async::SimpleAsyncConnection as _;
-use diesel_async::pooled_connection::bb8::Pool;
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
+use diesel_async::pooled_connection::bb8::Pool;
 use diesel_async::sync_connection_wrapper::SyncConnectionWrapper;
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 

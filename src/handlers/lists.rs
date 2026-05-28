@@ -150,7 +150,9 @@ pub async fn get_album_list(
         .collect();
 
     Ok(AlbumListResponse {
-        album_list: ChildAlbumsBody { album: album_children },
+        album_list: ChildAlbumsBody {
+            album: album_children,
+        },
     }
     .into())
 }
@@ -167,10 +169,15 @@ pub async fn get_album_list2(
     let albums = fetch_album_list(&mut conn, &params).await?;
     tracing::debug!(album_count = albums.len(), "getAlbumList2: results");
 
-    let album_list: Vec<AlbumId3> =
-        albums.iter().map(|row| album_id3_from_canonical(row, cfg)).collect();
+    let album_list: Vec<AlbumId3> = albums
+        .iter()
+        .map(|row| album_id3_from_canonical(row, cfg))
+        .collect();
 
-    Ok(AlbumList2Response { album_list2: AlbumList2Body { album: album_list } }.into())
+    Ok(AlbumList2Response {
+        album_list2: AlbumList2Body { album: album_list },
+    }
+    .into())
 }
 
 // --- getRandomSongs ---
@@ -235,7 +242,10 @@ pub async fn get_random_songs(
 
     let song_list: Vec<Child> = songs.iter().map(|s| child_from_song_row(s, cfg)).collect();
     tracing::debug!(song_count = song_list.len(), "getRandomSongs: results");
-    Ok(RandomSongsResponse { random_songs: SongsBody { song: song_list } }.into())
+    Ok(RandomSongsResponse {
+        random_songs: SongsBody { song: song_list },
+    }
+    .into())
 }
 
 // --- getSongsByGenre ---
@@ -278,12 +288,18 @@ pub async fn get_songs_by_genre(
 
     let song_list: Vec<Child> = songs.iter().map(|s| child_from_song_row(s, cfg)).collect();
     tracing::debug!(song_count = song_list.len(), "getSongsByGenre: results");
-    Ok(SongsByGenreResponse { songs_by_genre: SongsBody { song: song_list } }.into())
+    Ok(SongsByGenreResponse {
+        songs_by_genre: SongsBody { song: song_list },
+    }
+    .into())
 }
 
 /// GET/POST /rest/getNowPlaying — no extra parameters
 pub async fn get_now_playing(_auth: SubsonicAuth) -> SubsonicResponse<NowPlayingResponse> {
-    NowPlayingResponse { now_playing: NowPlayingBody { entry: vec![] } }.into()
+    NowPlayingResponse {
+        now_playing: NowPlayingBody { entry: vec![] },
+    }
+    .into()
 }
 
 // --- getStarred / getStarred2 ---
@@ -300,7 +316,11 @@ pub async fn get_starred(
     QueryOrForm(_params): QueryOrForm<GetStarredParams>,
 ) -> SubsonicResponse<StarredResponse> {
     StarredResponse {
-        starred: StarredContent { artist: vec![], album: vec![], song: vec![] },
+        starred: StarredContent {
+            artist: vec![],
+            album: vec![],
+            song: vec![],
+        },
     }
     .into()
 }
@@ -311,7 +331,11 @@ pub async fn get_starred2(
     QueryOrForm(_params): QueryOrForm<GetStarredParams>,
 ) -> SubsonicResponse<Starred2Response> {
     Starred2Response {
-        starred2: Starred2Content { artist: vec![], album: vec![], song: vec![] },
+        starred2: Starred2Content {
+            artist: vec![],
+            album: vec![],
+            song: vec![],
+        },
     }
     .into()
 }
@@ -329,7 +353,10 @@ pub async fn get_similar_songs(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<GetSimilarSongsParams>,
 ) -> SubsonicResponse<SimilarSongsResponse> {
-    SimilarSongsResponse { similar_songs: SongsBody { song: vec![] } }.into()
+    SimilarSongsResponse {
+        similar_songs: SongsBody { song: vec![] },
+    }
+    .into()
 }
 
 /// GET/POST /rest/getSimilarSongs2
@@ -337,7 +364,10 @@ pub async fn get_similar_songs2(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<GetSimilarSongsParams>,
 ) -> SubsonicResponse<SimilarSongs2Response> {
-    SimilarSongs2Response { similar_songs2: SongsBody { song: vec![] } }.into()
+    SimilarSongs2Response {
+        similar_songs2: SongsBody { song: vec![] },
+    }
+    .into()
 }
 
 // --- getTopSongs ---
@@ -353,7 +383,10 @@ pub async fn get_top_songs(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<GetTopSongsParams>,
 ) -> SubsonicResponse<TopSongsResponse> {
-    TopSongsResponse { top_songs: SongsBody { song: vec![] } }.into()
+    TopSongsResponse {
+        top_songs: SongsBody { song: vec![] },
+    }
+    .into()
 }
 
 // ---------------------------------------------------------------------------

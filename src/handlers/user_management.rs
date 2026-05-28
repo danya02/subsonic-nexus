@@ -69,13 +69,21 @@ pub async fn get_user(
     _auth: SubsonicAuth,
     QueryOrForm(params): QueryOrForm<GetUserParams>,
 ) -> SubsonicResponse<UserResponse> {
-    UserResponse { user: admin_user(params.username) }.into()
+    UserResponse {
+        user: admin_user(params.username),
+    }
+    .into()
 }
 
 /// GET/POST /rest/getUsers — no extra parameters
 pub async fn get_users(auth: SubsonicAuth) -> SubsonicResponse<UsersResponse> {
     let username = auth.username.unwrap_or_else(|| "admin".to_string());
-    UsersResponse { users: UsersBody { user: vec![admin_user(username)] } }.into()
+    UsersResponse {
+        users: UsersBody {
+            user: vec![admin_user(username)],
+        },
+    }
+    .into()
 }
 
 // --- createUser ---
@@ -108,7 +116,9 @@ pub async fn create_user(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<CreateUserParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("User management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "User management is not supported",
+    ))
 }
 
 // --- updateUser ---
@@ -142,7 +152,9 @@ pub async fn update_user(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<UpdateUserParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("User management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "User management is not supported",
+    ))
 }
 
 // --- deleteUser ---
@@ -157,7 +169,9 @@ pub async fn delete_user(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<DeleteUserParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("User management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "User management is not supported",
+    ))
 }
 
 // --- changePassword ---
@@ -173,5 +187,7 @@ pub async fn change_password(
     _auth: SubsonicAuth,
     QueryOrForm(_params): QueryOrForm<ChangePasswordParams>,
 ) -> Result<SubsonicResponse<Empty>, SubsonicError> {
-    Err(SubsonicError::not_authorized("User management is not supported"))
+    Err(SubsonicError::not_authorized(
+        "User management is not supported",
+    ))
 }

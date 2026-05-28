@@ -26,7 +26,10 @@ pub struct SharesResponse {
 
 /// GET/POST /rest/getShares — no extra parameters
 pub async fn get_shares(_auth: SubsonicAuth) -> SubsonicResponse<SharesResponse> {
-    SharesResponse { shares: SharesBody { share: vec![] } }.into()
+    SharesResponse {
+        shares: SharesBody { share: vec![] },
+    }
+    .into()
 }
 
 // --- createShare ---

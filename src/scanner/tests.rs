@@ -3,15 +3,15 @@
 //! All tests use an in-memory SQLite database with the full schema applied —
 //! no real upstream server is needed.
 
-use diesel::prelude::*;
 use diesel::SqliteConnection;
+use diesel::prelude::*;
 use diesel_migrations::MigrationHarness;
 
+use crate::db::MIGRATIONS;
 use crate::db::models::*;
 use crate::db::schema::*;
-use crate::db::MIGRATIONS;
-use crate::scanner::{delete_server_data, ensure_server_row};
 use crate::scanner::template::Template;
+use crate::scanner::{delete_server_data, ensure_server_row};
 
 // ── Test DB setup ─────────────────────────────────────────────────────────────
 
@@ -160,9 +160,24 @@ fn test_template_mbid_absent_fallback() {
 #[test]
 fn test_template_different_case_same_key() {
     let t = Template::parse("{name|lowercase|trim}");
-    let k1 = t.eval(&|f| if f == "name" { Some("Daft Punk".to_owned()) } else { None });
-    let k2 = t.eval(&|f| if f == "name" { Some("daft punk".to_owned()) } else { None });
-    assert_eq!(k1, k2, "case variants should produce the same aggregation key");
+    let k1 = t.eval(&|f| {
+        if f == "name" {
+            Some("Daft Punk".to_owned())
+        } else {
+            None
+        }
+    });
+    let k2 = t.eval(&|f| {
+        if f == "name" {
+            Some("daft punk".to_owned())
+        } else {
+            None
+        }
+    });
+    assert_eq!(
+        k1, k2,
+        "case variants should produce the same aggregation key"
+    );
 }
 
 // ── Aggregation logic tests ───────────────────────────────────────────────────
@@ -202,8 +217,26 @@ fn test_album_primary_server_wins() {
     let a1 = make_artist(&mut conn, s1, "dp-s1", "daft punk", "Daft Punk");
     let a2 = make_artist(&mut conn, s2, "dp-s2", "daft punk", "Daft Punk");
 
-    let alb1 = make_album(&mut conn, s1, "ram-s1", "daft punk:random access memories", Some(a1), "Random Access Memories", Some(2013), None);
-    let alb2 = make_album(&mut conn, s2, "ram-s2", "daft punk:random access memories", Some(a2), "Random Access Memories", Some(2013), None);
+    let alb1 = make_album(
+        &mut conn,
+        s1,
+        "ram-s1",
+        "daft punk:random access memories",
+        Some(a1),
+        "Random Access Memories",
+        Some(2013),
+        None,
+    );
+    let alb2 = make_album(
+        &mut conn,
+        s2,
+        "ram-s2",
+        "daft punk:random access memories",
+        Some(a2),
+        "Random Access Memories",
+        Some(2013),
+        None,
+    );
 
     // Simulate getAlbum("ram-s1"):
     // 1. Find row with upstream_id = "ram-s1" → alb1 (s1)
@@ -223,7 +256,10 @@ fn test_album_primary_server_wins() {
         .first(&mut conn)
         .unwrap();
 
-    assert_eq!(primary_album.id, alb1, "primary album should be from server1");
+    assert_eq!(
+        primary_album.id, alb1,
+        "primary album should be from server1"
+    );
     // Server2's row still exists
     assert_ne!(alb1, alb2);
 }
@@ -237,12 +273,51 @@ fn test_songs_from_primary_album() {
 
     let a1 = make_artist(&mut conn, s1, "dp-s1", "daft punk", "Daft Punk");
     let a2 = make_artist(&mut conn, s2, "dp-s2", "daft punk", "Daft Punk");
-    let alb1 = make_album(&mut conn, s1, "ram-s1", "daft punk:ram", Some(a1), "RAM", None, None);
-    let alb2 = make_album(&mut conn, s2, "ram-s2", "daft punk:ram", Some(a2), "RAM", None, None);
+    let alb1 = make_album(
+        &mut conn,
+        s1,
+        "ram-s1",
+        "daft punk:ram",
+        Some(a1),
+        "RAM",
+        None,
+        None,
+    );
+    let alb2 = make_album(
+        &mut conn,
+        s2,
+        "ram-s2",
+        "daft punk:ram",
+        Some(a2),
+        "RAM",
+        None,
+        None,
+    );
 
-    let _s1_song1 = make_song(&mut conn, s1, "song-1-s1", Some(alb1), Some(a1), "Get Lucky");
-    let _s1_song2 = make_song(&mut conn, s1, "song-2-s1", Some(alb1), Some(a1), "Instant Crush");
-    let _s2_song1 = make_song(&mut conn, s2, "song-1-s2", Some(alb2), Some(a2), "Get Lucky");
+    let _s1_song1 = make_song(
+        &mut conn,
+        s1,
+        "song-1-s1",
+        Some(alb1),
+        Some(a1),
+        "Get Lucky",
+    );
+    let _s1_song2 = make_song(
+        &mut conn,
+        s1,
+        "song-2-s1",
+        Some(alb1),
+        Some(a1),
+        "Instant Crush",
+    );
+    let _s2_song1 = make_song(
+        &mut conn,
+        s2,
+        "song-1-s2",
+        Some(alb2),
+        Some(a2),
+        "Get Lucky",
+    );
 
     // After resolving primary album = alb1, fetch its songs.
     let song_titles: Vec<String> = songs::table
@@ -251,7 +326,11 @@ fn test_songs_from_primary_album() {
         .load(&mut conn)
         .unwrap();
 
-    assert_eq!(song_titles.len(), 2, "should have exactly 2 songs from server1's album");
+    assert_eq!(
+        song_titles.len(),
+        2,
+        "should have exactly 2 songs from server1's album"
+    );
     assert!(song_titles.contains(&"Get Lucky".to_owned()));
     assert!(song_titles.contains(&"Instant Crush".to_owned()));
 }
@@ -268,13 +347,58 @@ fn test_artist_album_union() {
     let a2 = make_artist(&mut conn, s2, "dp-s2", "daft punk", "Daft Punk");
 
     // Server1 has 3 albums
-    make_album(&mut conn, s1, "alb-s1-1", "daft punk:homework", Some(a1), "Homework", Some(1997), None);
-    make_album(&mut conn, s1, "alb-s1-2", "daft punk:discovery", Some(a1), "Discovery", Some(2001), None);
-    make_album(&mut conn, s1, "alb-s1-3", "daft punk:ram", Some(a1), "RAM", Some(2013), None);
+    make_album(
+        &mut conn,
+        s1,
+        "alb-s1-1",
+        "daft punk:homework",
+        Some(a1),
+        "Homework",
+        Some(1997),
+        None,
+    );
+    make_album(
+        &mut conn,
+        s1,
+        "alb-s1-2",
+        "daft punk:discovery",
+        Some(a1),
+        "Discovery",
+        Some(2001),
+        None,
+    );
+    make_album(
+        &mut conn,
+        s1,
+        "alb-s1-3",
+        "daft punk:ram",
+        Some(a1),
+        "RAM",
+        Some(2013),
+        None,
+    );
 
     // Server2 has 2 albums (overlapping discovery + a unique one)
-    make_album(&mut conn, s2, "alb-s2-1", "daft punk:discovery", Some(a2), "Discovery", Some(2001), None);
-    make_album(&mut conn, s2, "alb-s2-2", "daft punk:alive 2007", Some(a2), "Alive 2007", Some(2007), None);
+    make_album(
+        &mut conn,
+        s2,
+        "alb-s2-1",
+        "daft punk:discovery",
+        Some(a2),
+        "Discovery",
+        Some(2001),
+        None,
+    );
+    make_album(
+        &mut conn,
+        s2,
+        "alb-s2-2",
+        "daft punk:alive 2007",
+        Some(a2),
+        "Alive 2007",
+        Some(2007),
+        None,
+    );
 
     // Find all artist rows with agg_key "daft punk", collect all album rows,
     // group by album agg_key — should yield 4 distinct albums.
@@ -292,7 +416,11 @@ fn test_artist_album_union() {
     album_keys.sort();
     album_keys.dedup();
 
-    assert_eq!(album_keys.len(), 4, "should have 4 distinct album aggregation keys");
+    assert_eq!(
+        album_keys.len(),
+        4,
+        "should have 4 distinct album aggregation keys"
+    );
     assert!(album_keys.contains(&"daft punk:alive 2007".to_owned()));
     assert!(album_keys.contains(&"daft punk:discovery".to_owned()));
     assert!(album_keys.contains(&"daft punk:homework".to_owned()));
@@ -307,8 +435,24 @@ fn test_song_routing() {
     let s1 = make_server(&mut conn, "server1", 0);
 
     let a1 = make_artist(&mut conn, s1, "dp-s1", "daft punk", "Daft Punk");
-    let alb1 = make_album(&mut conn, s1, "ram-s1", "daft punk:ram", Some(a1), "RAM", None, None);
-    let _ = make_song(&mut conn, s1, "get-lucky-s1", Some(alb1), Some(a1), "Get Lucky");
+    let alb1 = make_album(
+        &mut conn,
+        s1,
+        "ram-s1",
+        "daft punk:ram",
+        Some(a1),
+        "RAM",
+        None,
+        None,
+    );
+    let _ = make_song(
+        &mut conn,
+        s1,
+        "get-lucky-s1",
+        Some(alb1),
+        Some(a1),
+        "Get Lucky",
+    );
 
     // Simulate stream("get-lucky-s1"):
     let (found_server_id, found_upstream_id): (i32, String) = songs::table
@@ -368,7 +512,10 @@ fn test_template_change_triggers_rescan() {
         ..cfg1.clone()
     };
     let (_, needs_scan3) = ensure_server_row(&mut conn, &cfg2).unwrap();
-    assert!(needs_scan3, "changed artist template should trigger a rescan");
+    assert!(
+        needs_scan3,
+        "changed artist template should trigger a rescan"
+    );
 
     let count_after: i64 = artists::table.count().get_result(&mut conn).unwrap();
     assert_eq!(count_after, 0, "stale artist data should have been deleted");
@@ -383,8 +530,26 @@ fn test_delete_server_data() {
 
     let a1 = make_artist(&mut conn, s1, "a1", "artist one", "Artist One");
     let a2 = make_artist(&mut conn, s2, "a2", "artist two", "Artist Two");
-    let alb1 = make_album(&mut conn, s1, "alb1", "a1:alb", Some(a1), "Album 1", None, None);
-    let _ = make_album(&mut conn, s2, "alb2", "a2:alb", Some(a2), "Album 2", None, None);
+    let alb1 = make_album(
+        &mut conn,
+        s1,
+        "alb1",
+        "a1:alb",
+        Some(a1),
+        "Album 1",
+        None,
+        None,
+    );
+    let _ = make_album(
+        &mut conn,
+        s2,
+        "alb2",
+        "a2:alb",
+        Some(a2),
+        "Album 2",
+        None,
+        None,
+    );
     make_song(&mut conn, s1, "song1", Some(alb1), Some(a1), "Song 1");
 
     delete_server_data(&mut conn, s1).unwrap();

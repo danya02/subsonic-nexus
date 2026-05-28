@@ -74,6 +74,7 @@ pub async fn search(
     let offset = params.offset.unwrap_or(0) as i64;
 
     let songs = search_songs(&mut conn, &query, count, offset).await?;
+    tracing::debug!(query = %query, song_count = songs.len(), "search: results");
     let song_list: Vec<_> = songs.iter().map(|s| child_from_song_row(s, cfg)).collect();
 
     Ok(SearchResultResponse {
@@ -123,6 +124,7 @@ pub async fn search2(
         search_canonical_albums(&mut conn, &params.query, album_count, album_offset).await?;
     let songs =
         search_songs(&mut conn, &params.query, song_count, song_offset).await?;
+    tracing::debug!(query = %params.query, artist_count = artists.len(), album_count = albums.len(), song_count = songs.len(), "search2: results");
 
     let _artist_list: Vec<_> = artists.iter().map(|a| artist_id3_from_canonical(a, cfg)).collect();
     // search2 returns albums as Child-like (legacy), but the opensubsonic crate uses ArtistId3
@@ -199,6 +201,7 @@ pub async fn search3(
     let albums =
         search_canonical_albums(&mut conn, &params.query, album_count, album_offset).await?;
     let songs = search_songs(&mut conn, &params.query, song_count, song_offset).await?;
+    tracing::debug!(query = %params.query, artist_count = artists.len(), album_count = albums.len(), song_count = songs.len(), "search3: results");
 
     let artist_list: Vec<_> = artists.iter().map(|a| artist_id3_from_canonical(a, cfg)).collect();
     let album_list: Vec<_> = albums.iter().map(|a| album_id3_from_canonical(a, cfg)).collect();
@@ -263,6 +266,7 @@ async fn search_canonical_artists(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<CanonicalArtist>, SubsonicError> {
+    tracing::debug!(query, limit, offset, "search_canonical_artists");
     let q = query.replace('\'', "''").replace('%', "\\%").replace('_', "\\_");
     sql_query(format!(
         "{CANONICAL_ARTIST_SQL} AND ar.name LIKE '%{q}%' ESCAPE '\\' COLLATE NOCASE \
@@ -279,6 +283,7 @@ async fn search_canonical_albums(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<CanonicalAlbum>, SubsonicError> {
+    tracing::debug!(query, limit, offset, "search_canonical_albums");
     let q = query.replace('\'', "''").replace('%', "\\%").replace('_', "\\_");
     sql_query(format!(
         "{CANONICAL_ALBUM_SQL} AND al.name LIKE '%{q}%' ESCAPE '\\' COLLATE NOCASE \
@@ -295,6 +300,7 @@ async fn search_songs(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<SongRow>, SubsonicError> {
+    tracing::debug!(query, limit, offset, "search_songs");
     let q = query.replace('\'', "''").replace('%', "\\%").replace('_', "\\_");
     sql_query(format!(
         r#"SELECT

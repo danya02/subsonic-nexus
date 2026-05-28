@@ -54,6 +54,7 @@ pub async fn ensure_server_row(
                 || row.album_key_template.as_deref() != Some(album_tmpl.as_str());
 
             if templates_changed {
+                tracing::debug!(server = %cfg.name, server_id = row.id, "ensure_server_row: templates changed, wiping stale data");
                 // Wipe all data for this server — aggregation keys are stale.
                 delete_server_data(conn, row.id).await?;
 
@@ -67,6 +68,7 @@ pub async fn ensure_server_row(
                     .execute(conn)
                     .await?;
             } else {
+                tracing::debug!(server = %cfg.name, server_id = row.id, "ensure_server_row: existing server, templates unchanged");
                 // Just refresh priority in case it changed in config.
                 diesel::update(s::upstream_servers.find(row.id))
                     .set(s::priority.eq(cfg.priority))
@@ -77,6 +79,7 @@ pub async fn ensure_server_row(
             Ok((row.id, templates_changed))
         }
         None => {
+            tracing::debug!(server = %cfg.name, "ensure_server_row: first time seeing this server");
             // First time we see this server.
             diesel::insert_into(s::upstream_servers)
                 .values(NewUpstreamServer {
@@ -108,31 +111,41 @@ pub async fn delete_server_data(
     server_id: i32,
 ) -> QueryResult<()> {
     // ON DELETE CASCADE handles the child tables, but let's be explicit.
-    diesel::delete(songs::table.filter(songs::server_id.eq(server_id)))
+    let songs_deleted = diesel::delete(songs::table.filter(songs::server_id.eq(server_id)))
         .execute(conn)
         .await?;
-    diesel::delete(albums::table.filter(albums::server_id.eq(server_id)))
+    let albums_deleted = diesel::delete(albums::table.filter(albums::server_id.eq(server_id)))
         .execute(conn)
         .await?;
-    diesel::delete(artists::table.filter(artists::server_id.eq(server_id)))
+    let artists_deleted = diesel::delete(artists::table.filter(artists::server_id.eq(server_id)))
         .execute(conn)
         .await?;
-    diesel::delete(
+    let podcast_episodes_deleted = diesel::delete(
         podcast_episodes::table.filter(podcast_episodes::server_id.eq(server_id)),
     )
     .execute(conn)
     .await?;
-    diesel::delete(
+    let podcast_channels_deleted = diesel::delete(
         podcast_channels::table.filter(podcast_channels::server_id.eq(server_id)),
     )
     .execute(conn)
     .await?;
-    diesel::delete(
+    let radio_deleted = diesel::delete(
         internet_radio_stations::table
             .filter(internet_radio_stations::server_id.eq(server_id)),
     )
     .execute(conn)
     .await?;
+    tracing::debug!(
+        server_id,
+        songs = songs_deleted,
+        albums = albums_deleted,
+        artists = artists_deleted,
+        podcast_episodes = podcast_episodes_deleted,
+        podcast_channels = podcast_channels_deleted,
+        radio_stations = radio_deleted,
+        "delete_server_data: completed"
+    );
     Ok(())
 }
 
@@ -165,6 +178,7 @@ pub async fn scan_server(
         for artist_id3 in &index.artist {
             let agg_key = eval_artist(&artist_template, artist_id3);
             let metadata = serde_json::to_string(artist_id3).unwrap_or_default();
+            tracing::debug!(artist_id = %artist_id3.id, cover_art = ?artist_id3.cover_art, "storing artist metadata");
 
             let local_artist_id = upsert_artist(
                 conn,
@@ -190,6 +204,7 @@ pub async fn scan_server(
             for album_id3 in &artist_with_albums.album {
                 let album_agg_key = eval_album(&album_template, album_id3, &agg_key);
                 let album_meta = serde_json::to_string(album_id3).unwrap_or_default();
+                tracing::debug!(album_id = %album_id3.id, cover_art = ?album_id3.cover_art, "storing album metadata");
 
                 let local_album_id = upsert_album(
                     conn,
@@ -221,6 +236,7 @@ pub async fn scan_server(
 
                 for song in &album_with_songs.song {
                     let song_meta = serde_json::to_string(song).unwrap_or_default();
+                    tracing::debug!(song_id = %song.id, cover_art = ?song.cover_art, "storing song metadata");
                     // Resolve artist FK: prefer the song's own artist_id if present.
                     let song_artist_id = match song.artist_id.as_deref() {
                         Some(uid) => {
@@ -323,6 +339,16 @@ pub async fn scan_server(
         .await
         .ok();
 
+    tracing::info!(
+        server_id,
+        artists = stats.artists,
+        albums = stats.albums,
+        songs = stats.songs,
+        podcast_channels = stats.podcast_channels,
+        podcast_episodes = stats.podcast_episodes,
+        radio_stations = stats.radio_stations,
+        "scan_server: completed"
+    );
     Ok(stats)
 }
 
@@ -336,6 +362,7 @@ async fn upsert_artist(
     name: &str,
     metadata_json: &str,
 ) -> QueryResult<i32> {
+    tracing::debug!(server_id, upstream_id, aggregation_key, "upsert_artist");
     diesel::insert_into(artists::table)
         .values(NewArtist {
             server_id,
@@ -381,6 +408,7 @@ async fn upsert_album(
     user_rating: Option<i32>,
     metadata_json: &str,
 ) -> QueryResult<i32> {
+    tracing::debug!(server_id, upstream_id, aggregation_key, "upsert_album");
     diesel::insert_into(albums::table)
         .values(NewAlbum {
             server_id,
@@ -436,6 +464,7 @@ async fn upsert_song(
     genre: Option<&str>,
     metadata_json: &str,
 ) -> QueryResult<()> {
+    tracing::debug!(server_id, upstream_id, "upsert_song");
     diesel::insert_into(songs::table)
         .values(NewSong {
             server_id,

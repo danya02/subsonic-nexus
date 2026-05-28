@@ -80,8 +80,15 @@ pub async fn unstar(
 /// Proxy a star/unstar call to the `write_target` server (if configured),
 /// translating nexus IDs to upstream IDs.
 async fn proxy_annotation(state: &AppState, endpoint: &str, params: StarParams) {
-    let Some(ref target_name) = state.config.nexus.write_target else { return };
-    let Some(server_cfg) = state.config.server_by_name(target_name) else { return };
+    let Some(ref target_name) = state.config.nexus.write_target else {
+        tracing::debug!(endpoint, "proxy_annotation: no write_target configured, skipping");
+        return;
+    };
+    let Some(server_cfg) = state.config.server_by_name(target_name) else {
+        tracing::warn!(endpoint, write_target = %target_name, "proxy_annotation: write_target server not found in config");
+        return;
+    };
+    tracing::debug!(endpoint, write_target = %target_name, song_ids = params.id.len(), album_ids = params.album_id.len(), artist_ids = params.artist_id.len(), "proxy_annotation");
 
     let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
     let mut query_params: Vec<String> = Vec::new();
@@ -100,6 +107,7 @@ async fn proxy_annotation(state: &AppState, endpoint: &str, params: StarParams) 
     }
 
     if query_params.is_empty() {
+        tracing::debug!(endpoint, "proxy_annotation: no IDs to proxy, skipping");
         return;
     }
 
@@ -134,6 +142,7 @@ pub async fn set_rating(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<SetRatingParams>,
 ) -> SubsonicResponse<Empty> {
+    tracing::debug!(song_id = %params.id, rating = params.rating, "setRating");
     if let Some(ref target_name) = state.config.nexus.write_target {
         if let Some(server_cfg) = state.config.server_by_name(target_name) {
             let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
@@ -170,6 +179,7 @@ pub async fn scrobble(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<ScrobbleParams>,
 ) -> SubsonicResponse<Empty> {
+    tracing::debug!(song_id = %params.id, submission = ?params.submission, "scrobble");
     // Look up song to find its canonical server.
     if let Ok(mut conn) = get_conn(&state.pool).await {
         let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
@@ -216,6 +226,7 @@ pub async fn report_playback(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<ReportPlaybackParams>,
 ) -> SubsonicResponse<Empty> {
+    tracing::debug!(media_id = %params.media_id, state = %params.state, position_ms = params.position_ms, "reportPlayback");
     if let Ok(mut conn) = get_conn(&state.pool).await {
         let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
         if let Ok(Some(song)) = query_song_by_nexus_id(&mut conn, template, &params.media_id).await

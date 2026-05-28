@@ -6,7 +6,7 @@ metadata:
   labels:
     app: subsonic-nexus
 spec:
-  replicas: 1          # SQLite + WAL supports only one writer; keep at 1
+  replicas: 1
   selector:
     matchLabels:
       app: subsonic-nexus
@@ -23,17 +23,14 @@ spec:
             - containerPort: 3000
           env:
             - name: RUST_LOG
-              value: "subsonic_nexus=info,tower_http=info"
+              value: "subsonic_nexus=debug,tower_http=info"
           volumeMounts:
             # nexus.toml from Secret
             - name: config
               mountPath: /app/nexus.toml
               subPath: nexus.toml
               readOnly: true
-            # nexus.db in ephemeral storage — it's a disposable cache, recreated by scan
-            - name: db
-              mountPath: /app/nexus.db
-              subPath: nexus.db
+            # nexus.db lives in the container's writable layer — ephemeral by nature
           resources:
             requests:
               cpu: "100m"
@@ -51,8 +48,6 @@ spec:
         - name: config
           secret:
             secretName: subsonic-nexus-config
-        - name: db
-          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

@@ -44,6 +44,7 @@ async fn serve_song_media(
     endpoint: &str,
     extra_params: &[(&str, &str)],
 ) -> Result<Response, SubsonicError> {
+    tracing::debug!(song_nexus_id, endpoint, "serve_song_media: looking up song");
     let mut conn = get_conn(&state.pool).await?;
     let cfg = &state.config.nexus;
     let template = IdTemplate::from_config(&cfg.entity_id_template);
@@ -51,7 +52,10 @@ async fn serve_song_media(
     let song = query_song_by_nexus_id(&mut conn, template, song_nexus_id)
         .await
         .map_err(|e| SubsonicError::generic(e.to_string()))?
-        .ok_or_else(|| SubsonicError::not_found(format!("Song not found: {song_nexus_id}")))?;
+        .ok_or_else(|| {
+            tracing::warn!(song_nexus_id, endpoint, "serve_song_media: song not found");
+            SubsonicError::not_found(format!("Song not found: {song_nexus_id}"))
+        })?;
 
     // Find the server config.
     let server_cfg = state
@@ -60,6 +64,7 @@ async fn serve_song_media(
         .iter()
         .find(|s| s.name == song.server_name)
         .ok_or_else(|| {
+            tracing::warn!(server_name = %song.server_name, "serve_song_media: server not in config");
             SubsonicError::generic(format!(
                 "Server '{}' not found in config",
                 song.server_name
@@ -70,6 +75,7 @@ async fn serve_song_media(
     params.extend_from_slice(extra_params);
     let url = build_upstream_url(server_cfg, endpoint, &params);
 
+    tracing::debug!(endpoint, server = %server_cfg.name, proxy = cfg.proxy, "serve_song_media: routing to upstream");
     if cfg.proxy {
         proxy_upstream(&url).await
     } else {
@@ -79,6 +85,9 @@ async fn serve_song_media(
 
 /// Proxy an upstream URL, streaming the response body back to the client.
 async fn proxy_upstream(url: &str) -> Result<Response, SubsonicError> {
+    // Log the host only — the full URL contains auth tokens.
+    let host = url.split('/').nth(2).unwrap_or("?");
+    tracing::debug!(host, "proxy_upstream: sending request");
     let client = reqwest::Client::new();
     let upstream = client
         .get(url)
@@ -87,6 +96,7 @@ async fn proxy_upstream(url: &str) -> Result<Response, SubsonicError> {
         .map_err(|e| SubsonicError::generic(format!("Upstream request failed: {e}")))?;
 
     let status = StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::OK);
+    tracing::debug!(status = upstream.status().as_u16(), "proxy_upstream: response received");
     let mut headers = HeaderMap::new();
     for (name, value) in upstream.headers() {
         if let (Ok(n), Ok(v)) = (
@@ -128,6 +138,7 @@ pub async fn stream(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<StreamParams>,
 ) -> Result<Response, SubsonicError> {
+    tracing::info!(song_id = %params.id, max_bit_rate = ?params.max_bit_rate, format = ?params.format, "stream");
     let mut extra: Vec<(&str, &str)> = Vec::new();
     let max_bit_rate_s;
     if let Some(mbr) = params.max_bit_rate {
@@ -154,6 +165,7 @@ pub async fn download(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<DownloadParams>,
 ) -> Result<Response, SubsonicError> {
+    tracing::info!(song_id = %params.id, "download");
     serve_song_media(&state, &params.id, "download", &[]).await
 }
 
@@ -171,9 +183,12 @@ pub async fn get_cover_art(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<GetCoverArtParams>,
 ) -> Result<Response, SubsonicError> {
-    let (server_db_id, upstream_cover_art_id) = parse_cover_art_id(&params.id).ok_or_else(
-        || SubsonicError::not_found(format!("Invalid cover art id: {}", params.id)),
-    )?;
+    tracing::debug!(id = %params.id, "getCoverArt: parsing cover art id");
+    let (server_db_id, upstream_cover_art_id) = parse_cover_art_id(&params.id).ok_or_else(|| {
+        tracing::warn!(id = %params.id, "getCoverArt: invalid id (expected {{server_db_id}}:{{upstream_id}} format)");
+        SubsonicError::not_found(format!("Invalid cover art id: {}", params.id))
+    })?;
+    tracing::debug!(server_db_id, upstream_cover_art_id, "getCoverArt: parsed ok");
 
     // Find server config by DB id.
     let mut conn = get_conn(&state.pool).await?;
@@ -186,6 +201,7 @@ pub async fn get_cover_art(
         .first(&mut conn)
         .await
         .map_err(|_| {
+            tracing::warn!(server_db_id, "getCoverArt: server db id not found");
             SubsonicError::not_found(format!("Server {server_db_id} not found"))
         })?;
 
@@ -195,6 +211,7 @@ pub async fn get_cover_art(
         .iter()
         .find(|s| s.name == server_name)
         .ok_or_else(|| {
+            tracing::warn!(server_name = %server_name, "getCoverArt: server not in config");
             SubsonicError::generic(format!("Server '{server_name}' not in config"))
         })?;
 
@@ -204,6 +221,7 @@ pub async fn get_cover_art(
         cover_params.push(("size", s.as_str()));
     }
     let url = build_upstream_url(server_cfg, "getCoverArt", &cover_params);
+    tracing::debug!(server = %server_name, proxy = state.config.nexus.proxy, "getCoverArt: routing to upstream");
 
     if state.config.nexus.proxy {
         proxy_upstream(&url).await

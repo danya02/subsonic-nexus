@@ -60,18 +60,31 @@ impl RawAuthParams {
             Credential::None
         };
 
+        let auth_type = match &credential {
+            Credential::ApiKey(_) => "api_key",
+            Credential::Token { .. } => "token",
+            Credential::Plain(_) => "plain",
+            Credential::None => "none",
+        };
+
+        if matches!(credential, Credential::None) && self.u.is_some() {
+            tracing::warn!(username = ?self.u, "auth: username present but no credential provided");
+        }
+
         let format = match self.f.as_deref() {
             Some("xml") => Format::Xml,
             _ => Format::Json,
         };
 
-        SubsonicAuth {
+        let auth = SubsonicAuth {
             username: self.u,
             credential,
             client: self.c.unwrap_or_default(),
             version: self.v.unwrap_or_else(|| "1.16.1".to_string()),
             format,
-        }
+        };
+        tracing::debug!(username = ?auth.username, client = %auth.client, version = %auth.version, auth_type, "auth extracted");
+        auth
     }
 }
 

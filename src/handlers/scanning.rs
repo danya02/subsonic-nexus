@@ -47,7 +47,7 @@ pub async fn get_scan_status(
 ) -> Result<SubsonicResponse<ScanStatusResponse>, SubsonicError> {
     let mut conn = get_conn(&state.pool).await?;
     let count = song_count(&mut conn).await?;
-
+    tracing::debug!(song_count = count, "getScanStatus");
     Ok(ScanStatusResponse {
         scan_status: ScanStatus { scanning: false, count: Some(count) },
     }

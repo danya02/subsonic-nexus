@@ -130,6 +130,7 @@ pub async fn get_music_folders(
         .await
         .map_err(|e| SubsonicError::generic(e.to_string()))?;
 
+    tracing::debug!(folder_count = rows.len(), "getMusicFolders");
     let folders = rows
         .into_iter()
         .map(|(id, name)| MusicFolder { id: id as i64, name: Some(name) })
@@ -161,6 +162,7 @@ pub async fn get_indexes(
     let artists = query_canonical_artists(&mut conn, server_filter)
         .await
         .map_err(|e| SubsonicError::generic(e.to_string()))?;
+    tracing::debug!(server_filter = ?server_filter, artist_count = artists.len(), "getIndexes");
 
     let cfg = &state.config.nexus;
     let template = IdTemplate::from_config(&cfg.entity_id_template);
@@ -223,6 +225,7 @@ pub async fn get_music_directory(
     let cfg = &state.config.nexus;
     let template = IdTemplate::from_config(&cfg.entity_id_template);
     let id = &params.id;
+    tracing::info!(id = %id, "getMusicDirectory");
 
     // Try to interpret as a server (music folder) id first.
     if let Ok(server_id) = id.parse::<i32>() {
@@ -239,6 +242,7 @@ pub async fn get_music_directory(
             let artists = query_canonical_artists(&mut conn, Some(server_id))
                 .await
                 .map_err(|e| SubsonicError::generic(e.to_string()))?;
+            tracing::debug!(server_id, artist_count = artists.len(), "getMusicDirectory: listing artists for server");
             let children: Vec<Child> = artists
                 .iter()
                 .map(|row| {
@@ -277,6 +281,7 @@ pub async fn get_music_directory(
         let albums = query_albums_for_artist(&mut conn, &artist.aggregation_key)
             .await
             .map_err(|e| SubsonicError::generic(e.to_string()))?;
+        tracing::debug!(artist_name = %artist.name, album_count = albums.len(), "getMusicDirectory: listing albums for artist");
         let children: Vec<Child> = albums
             .iter()
             .map(|row| {
@@ -318,6 +323,7 @@ pub async fn get_music_directory(
         let songs = query_songs_for_album(&mut conn, album.db_id)
             .await
             .map_err(|e| SubsonicError::generic(e.to_string()))?;
+        tracing::debug!(album_name = %album.name, song_count = songs.len(), "getMusicDirectory: listing songs for album");
         let children: Vec<Child> = songs
             .iter()
             .map(|row| {
@@ -387,7 +393,7 @@ pub async fn get_genres(
     .await
     .map_err(|e| SubsonicError::generic(e.to_string()))?;
 
-    let genres = song_counts
+    let genres: Vec<Genre> = song_counts
         .into_iter()
         .map(|row| {
             let album_count = album_counts
@@ -398,6 +404,7 @@ pub async fn get_genres(
         })
         .collect();
 
+    tracing::debug!(genre_count = genres.len(), "getGenres");
     Ok(GenresResponse { genres: GenresBody { genre: genres } }.into())
 }
 
@@ -422,6 +429,7 @@ pub async fn get_artists(
         .map_err(|e| SubsonicError::generic(e.to_string()))?;
 
     let cfg = &state.config.nexus;
+    tracing::debug!(server_filter = ?server_filter, artist_count = rows.len(), "getArtists");
     let artists: Vec<_> = rows.iter().map(|r| artist_id3_from_canonical(r, cfg)).collect();
     let artists_id3 = artists_to_id3_response(artists);
 
@@ -445,6 +453,7 @@ pub async fn get_artist(
     let cfg = &state.config.nexus;
     let template = IdTemplate::from_config(&cfg.entity_id_template);
 
+    tracing::debug!(artist_id = %params.id, "getArtist");
     let row = query_artist_by_nexus_id(&mut conn, template, &params.id)
         .await
         .map_err(|e| SubsonicError::generic(e.to_string()))?
@@ -456,6 +465,7 @@ pub async fn get_artist(
         .await
         .map_err(|e| SubsonicError::generic(e.to_string()))?;
     let album_count = albums.len() as i64;
+    tracing::debug!(artist_name = %row.name, album_count, "getArtist: found");
     let album_list: Vec<_> = albums.iter().map(|a| album_id3_from_canonical(a, cfg)).collect();
 
     Ok(ArtistResponse {
@@ -492,6 +502,7 @@ pub async fn get_album(
     let cfg = &state.config.nexus;
     let template = IdTemplate::from_config(&cfg.entity_id_template);
 
+    tracing::debug!(album_id = %params.id, "getAlbum");
     let row = query_album_by_nexus_id(&mut conn, template, &params.id)
         .await
         .map_err(|e| SubsonicError::generic(e.to_string()))?
@@ -503,6 +514,7 @@ pub async fn get_album(
         .await
         .map_err(|e| SubsonicError::generic(e.to_string()))?;
     let song_list: Vec<Child> = songs.iter().map(|s| child_from_song_row(s, cfg)).collect();
+    tracing::debug!(album_name = %row.name, song_count = song_list.len(), "getAlbum: found");
 
     Ok(AlbumResponse {
         album: AlbumWithSongsId3 {
@@ -556,11 +568,13 @@ pub async fn get_song(
     let cfg = &state.config.nexus;
     let template = IdTemplate::from_config(&cfg.entity_id_template);
 
+    tracing::debug!(song_id = %params.id, "getSong");
     let row = query_song_by_nexus_id(&mut conn, template, &params.id)
         .await
         .map_err(|e| SubsonicError::generic(e.to_string()))?
         .ok_or_else(|| SubsonicError::not_found(format!("Song not found: {}", params.id)))?;
 
+    tracing::debug!(song_title = %row.title, "getSong: found");
     Ok(SongResponse { song: child_from_song_row(&row, cfg) }.into())
 }
 

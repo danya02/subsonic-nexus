@@ -89,6 +89,7 @@ pub fn parse_entity_id(template: IdTemplate, nexus_id: &str) -> ParsedId {
                 ParsedId { server_hint: hint, upstream_id: upstream.to_owned() }
             } else {
                 // Malformed — fall back to treating the whole string as upstream ID.
+                tracing::debug!(nexus_id, template = ?template, "parse_entity_id: no colon in prefixed ID, treating as upstream_id");
                 ParsedId { server_hint: None, upstream_id: nexus_id.to_owned() }
             }
         }
@@ -253,17 +254,19 @@ pub async fn query_canonical_artists(
     conn: &mut AsyncSqliteConnection,
     server_db_id: Option<i32>,
 ) -> Result<Vec<CanonicalArtist>, diesel::result::Error> {
-    if let Some(sid) = server_db_id {
+    let rows = if let Some(sid) = server_db_id {
         sql_query(format!(
             "{CANONICAL_ARTIST_SQL} AND ar.server_id = {sid} ORDER BY ar.name COLLATE NOCASE"
         ))
         .load(conn)
-        .await
+        .await?
     } else {
         sql_query(format!("{CANONICAL_ARTIST_SQL} ORDER BY ar.name COLLATE NOCASE"))
             .load(conn)
-            .await
-    }
+            .await?
+    };
+    tracing::debug!(server_filter = ?server_db_id, count = rows.len(), "query_canonical_artists");
+    Ok(rows)
 }
 
 /// Fetch the canonical artist matching a nexus entity ID.
@@ -290,6 +293,8 @@ pub async fn query_artist_by_nexus_id(
     ))
     .load(conn)
     .await?;
+    let found = !rows.is_empty();
+    tracing::debug!(nexus_id = %nexus_id, template = ?template, found = %found, "query_artist_by_nexus_id");
     Ok(rows.into_iter().next())
 }
 
@@ -319,7 +324,7 @@ pub async fn query_albums_for_artist(
     artist_agg_key: &str,
 ) -> Result<Vec<CanonicalAlbum>, diesel::result::Error> {
     let key = artist_agg_key.replace('\'', "''");
-    sql_query(format!(
+    let rows = sql_query(format!(
         r#"{CANONICAL_ALBUM_SQL}
         AND al.id IN (
             SELECT al3.id FROM albums al3
@@ -329,7 +334,9 @@ pub async fn query_albums_for_artist(
         ORDER BY al.year NULLS LAST, al.name COLLATE NOCASE"#
     ))
     .load(conn)
-    .await
+    .await?;
+    tracing::debug!(artist_agg_key, count = rows.len(), "query_albums_for_artist");
+    Ok(rows)
 }
 
 /// Fetch a canonical album by nexus entity ID.
@@ -354,6 +361,8 @@ pub async fn query_album_by_nexus_id(
     ))
     .load(conn)
     .await?;
+    let found = !rows.is_empty();
+    tracing::debug!(nexus_id = %nexus_id, template = ?template, found = %found, "query_album_by_nexus_id");
     Ok(rows.into_iter().next())
 }
 
@@ -362,7 +371,7 @@ pub async fn query_songs_for_album(
     conn: &mut AsyncSqliteConnection,
     album_db_id: i32,
 ) -> Result<Vec<SongRow>, diesel::result::Error> {
-    sql_query(format!(
+    let rows = sql_query(format!(
         r#"
         SELECT
             so.id       AS db_id,
@@ -381,7 +390,9 @@ pub async fn query_songs_for_album(
         "#
     ))
     .load(conn)
-    .await
+    .await?;
+    tracing::debug!(album_db_id, count = rows.len(), "query_songs_for_album");
+    Ok(rows)
 }
 
 /// Fetch a song by nexus entity ID.
@@ -416,6 +427,8 @@ pub async fn query_song_by_nexus_id(
     ))
     .load(conn)
     .await?;
+    let found = !rows.is_empty();
+    tracing::debug!(nexus_id = %nexus_id, template = ?template, found = %found, "query_song_by_nexus_id");
     Ok(rows.into_iter().next())
 }
 
@@ -429,19 +442,23 @@ pub fn artist_id3_from_canonical(row: &CanonicalArtist, cfg: &NexusConfig) -> Ar
         build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
 
     let mut a: ArtistId3 =
-        serde_json::from_str(&row.metadata_json).unwrap_or_else(|_| ArtistId3 {
-            id: nexus_id.clone(),
-            name: row.name.clone(),
-            cover_art: None,
-            artist_image_url: None,
-            album_count: None,
-            starred: None,
-            music_brainz_id: None,
-            sort_name: None,
-            roles: None,
+        serde_json::from_str(&row.metadata_json).unwrap_or_else(|e| {
+            tracing::warn!(upstream_id = %row.upstream_id, error = %e, "artist_id3_from_canonical: metadata_json parse failed, using fallback");
+            ArtistId3 {
+                id: nexus_id.clone(),
+                name: row.name.clone(),
+                cover_art: None,
+                artist_image_url: None,
+                album_count: None,
+                starred: None,
+                music_brainz_id: None,
+                sort_name: None,
+                roles: None,
+            }
         });
 
     a.id = nexus_id;
+    tracing::debug!(upstream_id = %row.upstream_id, server_id = row.server_id, upstream_cover_art = ?a.cover_art, "artist_id3_from_canonical: rewriting cover_art");
     if let Some(ref ca) = a.cover_art.clone() {
         a.cover_art = Some(build_cover_art_id(row.server_id, ca));
     }
@@ -455,38 +472,42 @@ pub fn album_id3_from_canonical(row: &CanonicalAlbum, cfg: &NexusConfig) -> Albu
         build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
 
     let mut al: AlbumId3 =
-        serde_json::from_str(&row.metadata_json).unwrap_or_else(|_| AlbumId3 {
-            id: nexus_id.clone(),
-            name: row.name.clone(),
-            version: None,
-            artist: None,
-            artist_id: None,
-            cover_art: None,
-            song_count: None,
-            duration: None,
-            play_count: None,
-            created: None,
-            starred: None,
-            year: None,
-            genre: None,
-            played: None,
-            user_rating: None,
-            record_labels: None,
-            music_brainz_id: None,
-            genres: None,
-            artists: None,
-            display_artist: None,
-            release_types: None,
-            original_release_date: None,
-            release_date: None,
-            is_compilation: None,
-            sort_name: None,
-            disc_titles: None,
-            explicit_status: None,
-            moods: None,
+        serde_json::from_str(&row.metadata_json).unwrap_or_else(|e| {
+            tracing::warn!(upstream_id = %row.upstream_id, error = %e, "album_id3_from_canonical: metadata_json parse failed, using fallback");
+            AlbumId3 {
+                id: nexus_id.clone(),
+                name: row.name.clone(),
+                version: None,
+                artist: None,
+                artist_id: None,
+                cover_art: None,
+                song_count: None,
+                duration: None,
+                play_count: None,
+                created: None,
+                starred: None,
+                year: None,
+                genre: None,
+                played: None,
+                user_rating: None,
+                record_labels: None,
+                music_brainz_id: None,
+                genres: None,
+                artists: None,
+                display_artist: None,
+                release_types: None,
+                original_release_date: None,
+                release_date: None,
+                is_compilation: None,
+                sort_name: None,
+                disc_titles: None,
+                explicit_status: None,
+                moods: None,
+            }
         });
 
     al.id = nexus_id;
+    tracing::debug!(upstream_id = %row.upstream_id, server_id = row.server_id, upstream_cover_art = ?al.cover_art, "album_id3_from_canonical: rewriting cover_art");
     if let Some(ref ca) = al.cover_art.clone() {
         al.cover_art = Some(build_cover_art_id(row.server_id, ca));
     }
@@ -512,63 +533,67 @@ pub fn child_from_song_row(row: &SongRow, cfg: &NexusConfig) -> Child {
         build_entity_id(template, &row.server_name, row.server_id, &row.upstream_id);
 
     let mut child: Child =
-        serde_json::from_str(&row.metadata_json).unwrap_or_else(|_| Child {
-            id: nexus_id.clone(),
-            parent: None,
-            is_dir: false,
-            title: row.title.clone(),
-            album: None,
-            artist: None,
-            track: None,
-            year: None,
-            genre: None,
-            cover_art: None,
-            size: None,
-            content_type: None,
-            suffix: None,
-            transcoded_content_type: None,
-            transcoded_suffix: None,
-            duration: None,
-            bit_rate: None,
-            bit_depth: None,
-            sampling_rate: None,
-            channel_count: None,
-            path: None,
-            is_video: None,
-            user_rating: None,
-            average_rating: None,
-            play_count: None,
-            disc_number: None,
-            created: None,
-            starred: None,
-            album_id: None,
-            artist_id: None,
-            media_type_generic: None,
-            media_type: None,
-            bookmark_position: None,
-            original_width: None,
-            original_height: None,
-            played: None,
-            bpm: None,
-            comment: None,
-            sort_name: None,
-            music_brainz_id: None,
-            isrc: None,
-            genres: None,
-            artists: None,
-            display_artist: None,
-            album_artists: None,
-            display_album_artist: None,
-            contributors: None,
-            display_composer: None,
-            moods: None,
-            replay_gain: None,
-            explicit_status: None,
-            works: None,
-            movements: None,
+        serde_json::from_str(&row.metadata_json).unwrap_or_else(|e| {
+            tracing::warn!(upstream_id = %row.upstream_id, error = %e, "child_from_song_row: metadata_json parse failed, using fallback");
+            Child {
+                id: nexus_id.clone(),
+                parent: None,
+                is_dir: false,
+                title: row.title.clone(),
+                album: None,
+                artist: None,
+                track: None,
+                year: None,
+                genre: None,
+                cover_art: None,
+                size: None,
+                content_type: None,
+                suffix: None,
+                transcoded_content_type: None,
+                transcoded_suffix: None,
+                duration: None,
+                bit_rate: None,
+                bit_depth: None,
+                sampling_rate: None,
+                channel_count: None,
+                path: None,
+                is_video: None,
+                user_rating: None,
+                average_rating: None,
+                play_count: None,
+                disc_number: None,
+                created: None,
+                starred: None,
+                album_id: None,
+                artist_id: None,
+                media_type_generic: None,
+                media_type: None,
+                bookmark_position: None,
+                original_width: None,
+                original_height: None,
+                played: None,
+                bpm: None,
+                comment: None,
+                sort_name: None,
+                music_brainz_id: None,
+                isrc: None,
+                genres: None,
+                artists: None,
+                display_artist: None,
+                album_artists: None,
+                display_album_artist: None,
+                contributors: None,
+                display_composer: None,
+                moods: None,
+                replay_gain: None,
+                explicit_status: None,
+                works: None,
+                movements: None,
+            }
         });
 
     child.id = nexus_id;
+    tracing::debug!(upstream_id = %row.upstream_id, server_id = row.server_id, upstream_cover_art = ?child.cover_art, "child_from_song_row: rewriting cover_art");
     if let Some(ref ca) = child.cover_art.clone() {
         child.cover_art = Some(build_cover_art_id(row.server_id, ca));
     }

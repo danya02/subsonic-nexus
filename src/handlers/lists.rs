@@ -125,9 +125,11 @@ pub async fn get_album_list(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<GetAlbumListParams>,
 ) -> Result<SubsonicResponse<AlbumListResponse>, SubsonicError> {
+    tracing::debug!(list_type = %params.list_type, size = ?params.size, offset = ?params.offset, "getAlbumList");
     let mut conn = get_conn(&state.pool).await?;
     let cfg = &state.config.nexus;
     let albums = fetch_album_list(&mut conn, &params).await?;
+    tracing::debug!(album_count = albums.len(), "getAlbumList: results");
 
     let album_children: Vec<Child> = albums
         .iter()
@@ -159,9 +161,11 @@ pub async fn get_album_list2(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<GetAlbumListParams>,
 ) -> Result<SubsonicResponse<AlbumList2Response>, SubsonicError> {
+    tracing::debug!(list_type = %params.list_type, size = ?params.size, offset = ?params.offset, "getAlbumList2");
     let mut conn = get_conn(&state.pool).await?;
     let cfg = &state.config.nexus;
     let albums = fetch_album_list(&mut conn, &params).await?;
+    tracing::debug!(album_count = albums.len(), "getAlbumList2: results");
 
     let album_list: Vec<AlbumId3> =
         albums.iter().map(|row| album_id3_from_canonical(row, cfg)).collect();
@@ -187,6 +191,7 @@ pub async fn get_random_songs(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<GetRandomSongsParams>,
 ) -> Result<SubsonicResponse<RandomSongsResponse>, SubsonicError> {
+    tracing::debug!(size = ?params.size, from_year = ?params.from_year, to_year = ?params.to_year, genre = ?params.genre, "getRandomSongs");
     let mut conn = get_conn(&state.pool).await?;
     let cfg = &state.config.nexus;
 
@@ -229,6 +234,7 @@ pub async fn get_random_songs(
     .map_err(|e| SubsonicError::generic(e.to_string()))?;
 
     let song_list: Vec<Child> = songs.iter().map(|s| child_from_song_row(s, cfg)).collect();
+    tracing::debug!(song_count = song_list.len(), "getRandomSongs: results");
     Ok(RandomSongsResponse { random_songs: SongsBody { song: song_list } }.into())
 }
 
@@ -249,6 +255,7 @@ pub async fn get_songs_by_genre(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<GetSongsByGenreParams>,
 ) -> Result<SubsonicResponse<SongsByGenreResponse>, SubsonicError> {
+    tracing::debug!(genre = %params.genre, count = ?params.count, offset = ?params.offset, "getSongsByGenre");
     let mut conn = get_conn(&state.pool).await?;
     let cfg = &state.config.nexus;
 
@@ -270,6 +277,7 @@ pub async fn get_songs_by_genre(
     .map_err(|e| SubsonicError::generic(e.to_string()))?;
 
     let song_list: Vec<Child> = songs.iter().map(|s| child_from_song_row(s, cfg)).collect();
+    tracing::debug!(song_count = song_list.len(), "getSongsByGenre: results");
     Ok(SongsByGenreResponse { songs_by_genre: SongsBody { song: song_list } }.into())
 }
 
@@ -394,6 +402,7 @@ async fn fetch_album_list(
         "recent" => "al.played_at DESC NULLS LAST".to_owned(),
         "starred" => {
             // No star data — return empty.
+            tracing::debug!("fetch_album_list: starred not implemented, returning empty");
             return Ok(vec![]);
         }
         _ /* "random" and unknown */ => "RANDOM()".to_owned(),

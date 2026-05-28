@@ -1,0 +1,7 @@
+target/
+nexus.db*
+nexus.toml
+.git/
+tests/
+upstream/
+*.md

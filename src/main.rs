@@ -28,7 +28,26 @@ async fn main() {
     let pool = db::build_pool("nexus.db").await;
 
     let state = state::AppState::new(pool, config);
-    let app = router::build_router(state);
+    let app = router::build_router(state.clone());
+
+    // Background scan task: runs immediately on startup, then repeats every
+    // `scan_interval_secs` seconds. Set to 0 to disable periodic rescanning.
+    let scan_pool = state.pool.clone();
+    let scan_servers = state.config.servers.clone();
+    let scan_interval_secs = state.config.nexus.scan_interval_secs;
+    tokio::spawn(async move {
+        if scan_interval_secs == 0 {
+            scanner::run_full_scan(&scan_pool, &scan_servers).await;
+        } else {
+            let period = std::time::Duration::from_secs(scan_interval_secs);
+            let mut ticker = tokio::time::interval(period);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                ticker.tick().await; // first tick fires immediately
+                scanner::run_full_scan(&scan_pool, &scan_servers).await;
+            }
+        }
+    });
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await

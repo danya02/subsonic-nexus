@@ -21,7 +21,7 @@ use opensubsonic::{Auth, Client};
 use serde_json;
 
 use crate::config::ServerConfig;
-use crate::db::AsyncSqliteConnection;
+use crate::db::{AsyncSqliteConnection, DbPool};
 use crate::db::models::*;
 use crate::db::schema::*;
 use template::{Template, eval_album, eval_artist};
@@ -653,5 +653,44 @@ impl std::fmt::Display for ScanError {
 impl From<diesel::result::Error> for ScanError {
     fn from(e: diesel::result::Error) -> Self {
         ScanError::Db(e)
+    }
+}
+
+// ── Convenience: scan all configured servers ──────────────────────────────────
+
+/// Scan every server in `servers` sequentially, acquiring a fresh DB connection
+/// per server.  Errors are logged but do not abort subsequent servers.
+pub async fn run_full_scan(pool: &DbPool, servers: &[ServerConfig]) {
+    for cfg in servers {
+        let mut conn = match pool.get().await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!(server = %cfg.name, error = %e, "scan: failed to get DB connection");
+                continue;
+            }
+        };
+
+        let server_id = match ensure_server_row(&mut conn, cfg).await {
+            Ok((id, _)) => id,
+            Err(e) => {
+                tracing::error!(server = %cfg.name, error = %e, "scan: failed to ensure server row");
+                continue;
+            }
+        };
+
+        tracing::info!(server = %cfg.name, "scan: starting");
+        match scan_server(&mut conn, cfg, server_id).await {
+            Ok(stats) => tracing::info!(
+                server = %cfg.name,
+                artists = stats.artists,
+                albums = stats.albums,
+                songs = stats.songs,
+                podcast_channels = stats.podcast_channels,
+                podcast_episodes = stats.podcast_episodes,
+                radio_stations = stats.radio_stations,
+                "scan: complete",
+            ),
+            Err(e) => tracing::warn!(server = %cfg.name, error = %e, "scan: failed"),
+        }
     }
 }

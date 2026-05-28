@@ -92,6 +92,12 @@ pub struct NexusConfig {
     /// Must match a `[[server]]` `name` field.  If absent, write operations
     /// return `not_authorized`.
     pub write_target: Option<String>,
+
+    /// How often (in seconds) to automatically re-scan all upstream servers.
+    /// The first scan runs immediately on startup. Set to 0 to disable
+    /// periodic scanning (manual-only via POST /admin/scan or startScan).
+    #[serde(default = "default_scan_interval_secs")]
+    pub scan_interval_secs: u64,
 }
 
 impl Default for NexusConfig {
@@ -100,12 +106,17 @@ impl Default for NexusConfig {
             entity_id_template: default_entity_id_template(),
             proxy: false,
             write_target: None,
+            scan_interval_secs: default_scan_interval_secs(),
         }
     }
 }
 
 fn default_entity_id_template() -> String {
     "{upstream_id}".to_owned()
+}
+
+fn default_scan_interval_secs() -> u64 {
+    1800
 }
 
 impl Default for Config {

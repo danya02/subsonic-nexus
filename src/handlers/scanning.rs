@@ -63,32 +63,10 @@ pub async fn start_scan(
     let count = song_count(&mut conn).await?;
     drop(conn);
 
-    // Spawn a background rescan — mirrors the logic in admin::trigger_scan.
+    // Spawn a background rescan.
     let state_clone = state.clone();
     tokio::spawn(async move {
-        for cfg in &state_clone.config.servers {
-            let mut db_conn = match state_clone.pool.get().await {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::error!(server = %cfg.name, error = %e, "scan: failed to get DB connection");
-                    continue;
-                }
-            };
-            let server_id =
-                match crate::scanner::ensure_server_row(&mut db_conn, cfg).await {
-                    Ok((id, _)) => id,
-                    Err(e) => {
-                        tracing::error!(server = %cfg.name, error = %e, "scan: failed to ensure server row");
-                        continue;
-                    }
-                };
-            tracing::info!(server = %cfg.name, "scan: starting");
-            if let Err(e) =
-                crate::scanner::scan_server(&mut db_conn, cfg, server_id).await
-            {
-                tracing::warn!(server = %cfg.name, error = %e, "scan: failed");
-            }
-        }
+        crate::scanner::run_full_scan(&state_clone.pool, &state_clone.config.servers).await;
     });
 
     Ok(ScanStatusResponse {

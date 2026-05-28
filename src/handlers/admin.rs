@@ -275,38 +275,7 @@ pub async fn trigger_scan(State(state): State<AppState>) -> Response {
 
     // Spawn the scan as a background task so we can return immediately.
     tokio::spawn(async move {
-        for cfg in &state.config.servers {
-            let mut conn = match state.pool.get().await {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::error!(server = %cfg.name, error = %e, "scan: failed to get DB connection");
-                    continue;
-                }
-            };
-
-            let server_id = match crate::scanner::ensure_server_row(&mut conn, cfg).await {
-                Ok((id, _)) => id,
-                Err(e) => {
-                    tracing::error!(server = %cfg.name, error = %e, "scan: failed to ensure server row");
-                    continue;
-                }
-            };
-
-            tracing::info!(server = %cfg.name, "scan: starting");
-            match crate::scanner::scan_server(&mut conn, cfg, server_id).await {
-                Ok(stats) => tracing::info!(
-                    server = %cfg.name,
-                    artists = stats.artists,
-                    albums = stats.albums,
-                    songs = stats.songs,
-                    podcast_channels = stats.podcast_channels,
-                    podcast_episodes = stats.podcast_episodes,
-                    radio_stations = stats.radio_stations,
-                    "scan: complete",
-                ),
-                Err(e) => tracing::warn!(server = %cfg.name, error = %e, "scan: failed"),
-            }
-        }
+        crate::scanner::run_full_scan(&state.pool, &state.config.servers).await;
     });
 
     (

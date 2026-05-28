@@ -1,5 +1,5 @@
 # --- build stage ---
-FROM rust:1.87-bookworm AS builder
+FROM rustlang/rust:nightly-2026-05-28-bookworm AS builder
 
 RUN apt-get update && apt-get install -y libsqlite3-dev && rm -rf /var/lib/apt/lists/*
 
@@ -8,7 +8,10 @@ COPY Cargo.toml Cargo.lock ./
 COPY migrations ./migrations
 COPY src ./src
 
-RUN cargo build --release
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release && \
+    cp target/release/subsonic-nexus /subsonic-nexus
 
 # --- runtime stage ---
 FROM debian:bookworm-slim
@@ -19,7 +22,7 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/subsonic-nexus /app/subsonic-nexus
+COPY --from=builder /subsonic-nexus /app/subsonic-nexus
 
 # nexus.toml is expected at /app/nexus.toml (mount a ConfigMap/Secret here)
 # nexus.db is expected at /app/nexus.db   (mount a PVC here)

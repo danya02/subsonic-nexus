@@ -215,11 +215,10 @@ pub async fn get_random_songs(
         let g = g.replace('\'', "''");
         where_clauses.push(format!("so.genre = '{g}'"));
     }
-    if let Some(ref fid) = params.music_folder_id {
-        if let Ok(sid) = fid.parse::<i32>() {
+    if let Some(ref fid) = params.music_folder_id
+        && let Ok(sid) = fid.parse::<i32>() {
             where_clauses.push(format!("so.server_id = {sid}"));
         }
-    }
 
     let where_sql = if where_clauses.is_empty() {
         String::new()
@@ -451,17 +450,15 @@ async fn fetch_album_list(
             extra_where.push(format!("al.year <= {ty}"));
         }
     }
-    if params.list_type == "byGenre" {
-        if let Some(ref g) = params.genre {
+    if params.list_type == "byGenre"
+        && let Some(ref g) = params.genre {
             let g = g.replace('\'', "''");
             extra_where.push(format!("al.genre = '{g}' COLLATE NOCASE"));
         }
-    }
-    if let Some(ref fid) = params.music_folder_id {
-        if let Ok(sid) = fid.parse::<i32>() {
+    if let Some(ref fid) = params.music_folder_id
+        && let Ok(sid) = fid.parse::<i32>() {
             extra_where.push(format!("al.server_id = {sid}"));
         }
-    }
 
     let where_extra = if extra_where.is_empty() {
         String::new()

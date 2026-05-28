@@ -151,7 +151,7 @@ pub async fn get_podcasts(
             channel.episode = episode_rows
                 .iter()
                 .filter(|e| e.channel_upstream_id == channel.id)
-                .map(|row| episode_from_row(row))
+                .map(episode_from_row)
                 .collect();
         }
     }

@@ -209,12 +209,12 @@ pub async fn scan_server(
                     &album_agg_key,
                     Some(local_artist_id),
                     &album_id3.name,
-                    album_id3.year.map(|y| y as i32),
+                    album_id3.year,
                     album_id3.genre.as_deref(),
                     album_id3.created.as_deref(),
                     album_id3.play_count.map(|p| p as i32),
                     album_id3.played.as_deref(),
-                    album_id3.user_rating.map(|r| r as i32),
+                    album_id3.user_rating,
                     &album_meta,
                 )
                 .await?;
@@ -250,7 +250,7 @@ pub async fn scan_server(
                         Some(local_album_id),
                         song_artist_id,
                         &song.title,
-                        song.year.map(|y| y as i32),
+                        song.year,
                         song.genre.as_deref(),
                         &song_meta,
                     )

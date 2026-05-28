@@ -521,8 +521,8 @@ pub fn album_id3_from_canonical(row: &CanonicalAlbum, cfg: &NexusConfig) -> Albu
     }
     // Rewrite artist_id to nexus ID if it's an upstream ID.
     // With UpstreamOnly template this is already correct.
-    if let Some(ref aid) = al.artist_id.clone() {
-        if template != IdTemplate::UpstreamOnly {
+    if let Some(ref aid) = al.artist_id.clone()
+        && template != IdTemplate::UpstreamOnly {
             al.artist_id = Some(build_entity_id(
                 template,
                 &row.server_name,
@@ -530,7 +530,6 @@ pub fn album_id3_from_canonical(row: &CanonicalAlbum, cfg: &NexusConfig) -> Albu
                 aid,
             ));
         }
-    }
     al
 }
 

@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 /// The full contents of `nexus.toml`.
 #[derive(Debug, Clone, Deserialize)]
+#[derive(Default)]
 pub struct Config {
     #[serde(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
@@ -119,14 +120,6 @@ fn default_scan_interval_secs() -> u64 {
     1800
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            servers: vec![],
-            nexus: NexusConfig::default(),
-        }
-    }
-}
 
 impl Config {
     /// Load and parse `nexus.toml` from the given path.

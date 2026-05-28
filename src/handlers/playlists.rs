@@ -49,7 +49,7 @@ pub struct PlayQueueByIndexResponse {
 // ---------------------------------------------------------------------------
 
 /// Resolve the write_target server config, or return `not_authorized`.
-fn write_target_cfg<'a>(state: &'a AppState) -> Result<&'a ServerConfig, SubsonicError> {
+fn write_target_cfg(state: &AppState) -> Result<&ServerConfig, SubsonicError> {
     let name = state.config.nexus.write_target.as_deref().ok_or_else(|| {
         SubsonicError::not_authorized(
             "No write_target configured; playlist operations are read-only",

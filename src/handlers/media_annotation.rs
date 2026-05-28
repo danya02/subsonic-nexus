@@ -150,8 +150,8 @@ pub async fn set_rating(
     QueryOrForm(params): QueryOrForm<SetRatingParams>,
 ) -> SubsonicResponse<Empty> {
     tracing::debug!(song_id = %params.id, rating = params.rating, "setRating");
-    if let Some(ref target_name) = state.config.nexus.write_target {
-        if let Some(server_cfg) = state.config.server_by_name(target_name) {
+    if let Some(ref target_name) = state.config.nexus.write_target
+        && let Some(server_cfg) = state.config.server_by_name(target_name) {
             let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
             let parsed = parse_entity_id(template, &params.id);
             let rating_s = params.rating.to_string();
@@ -162,7 +162,6 @@ pub async fn set_rating(
             )
             .await;
         }
-    }
     Empty {}.into()
 }
 
@@ -191,8 +190,8 @@ pub async fn scrobble(
     // Look up song to find its canonical server.
     if let Ok(mut conn) = get_conn(&state.pool).await {
         let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
-        if let Ok(Some(song)) = query_song_by_nexus_id(&mut conn, template, &params.id).await {
-            if let Some(server_cfg) = state.config.server_by_name(&song.server_name) {
+        if let Ok(Some(song)) = query_song_by_nexus_id(&mut conn, template, &params.id).await
+            && let Some(server_cfg) = state.config.server_by_name(&song.server_name) {
                 let time_s;
                 let submission_s;
                 let mut extra: Vec<(&str, &str)> = vec![("id", &song.upstream_id)];
@@ -206,7 +205,6 @@ pub async fn scrobble(
                 }
                 proxy_write(server_cfg, "scrobble", &extra).await;
             }
-        }
     }
     Empty {}.into()
 }
@@ -238,8 +236,7 @@ pub async fn report_playback(
     if let Ok(mut conn) = get_conn(&state.pool).await {
         let template = IdTemplate::from_config(&state.config.nexus.entity_id_template);
         if let Ok(Some(song)) = query_song_by_nexus_id(&mut conn, template, &params.media_id).await
-        {
-            if let Some(server_cfg) = state.config.server_by_name(&song.server_name) {
+            && let Some(server_cfg) = state.config.server_by_name(&song.server_name) {
                 let position_s = params.position_ms.to_string();
                 let ignore_s;
                 let rate_s;
@@ -259,7 +256,6 @@ pub async fn report_playback(
                 }
                 proxy_write(server_cfg, "reportPlayback", &extra).await;
             }
-        }
     }
     Empty {}.into()
 }

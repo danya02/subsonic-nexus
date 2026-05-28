@@ -1,5 +1,5 @@
 # --- build stage ---
-FROM rustlang/rust:nightly-2026-05-28-bookworm AS builder
+FROM rust:1.95.0-trixie AS builder
 
 RUN apt-get update && apt-get install -y libsqlite3-dev && rm -rf /var/lib/apt/lists/*
 
@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cp target/release/subsonic-nexus /subsonic-nexus
 
 # --- runtime stage ---
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libsqlite3-0 ca-certificates \

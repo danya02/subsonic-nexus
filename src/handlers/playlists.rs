@@ -8,7 +8,7 @@ use crate::auth::SubsonicAuth;
 use crate::config::ServerConfig;
 use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
-use crate::nexus::{IdTemplate, build_cover_art_id, build_upstream_url, parse_entity_id};
+use crate::nexus::{IdTemplate, build_upstream_url, parse_entity_id};
 use crate::response::{Empty, SubsonicResponse};
 use crate::state::AppState;
 
@@ -159,15 +159,11 @@ pub async fn get_playlists(
     let body = proxy_get(server_cfg, "getPlaylists", &extra).await?;
     let resp = subsonic_inner(body)?;
 
-    let mut playlists: Vec<Playlist> = resp
+    let playlists: Vec<Playlist> = resp
         .get("playlists")
         .and_then(|p| p.get("playlist"))
         .and_then(|a| serde_json::from_value(a.clone()).ok())
         .unwrap_or_default();
-
-    playlists.iter_mut().for_each(|p| {
-        p.cover_art = (p.cover_art.as_ref()).map(|v| build_cover_art_id(&server_cfg.name, v));
-    });
 
     Ok(PlaylistsResponse {
         playlists: PlaylistsBody {
@@ -195,23 +191,12 @@ pub async fn get_playlist(
     let body = proxy_get(server_cfg, "getPlaylist", &[("id", &params.id)]).await?;
     let resp = subsonic_inner(body)?;
 
-    let mut playlist: PlaylistWithSongs = resp
+    let playlist: PlaylistWithSongs = resp
         .get("playlist")
         .ok_or_else(|| SubsonicError::not_found(format!("Playlist not found: {}", params.id)))
         .and_then(|p| {
             serde_json::from_value(p.clone()).map_err(|e| SubsonicError::generic(e.to_string()))
         })?;
-
-    playlist.cover_art = playlist
-        .cover_art
-        .as_ref()
-        .map(|v| build_cover_art_id(&server_cfg.name, v));
-    playlist.entry.iter_mut().for_each(|e| {
-        e.cover_art = e
-            .cover_art
-            .as_ref()
-            .map(|v| build_cover_art_id(&server_cfg.name, v));
-    });
 
     Ok(PlaylistResponse { playlist }.into())
 }
@@ -260,23 +245,12 @@ pub async fn create_playlist(
     let body = proxy_get(server_cfg, "createPlaylist", &extra).await?;
     let resp = subsonic_inner(body)?;
 
-    let mut playlist: PlaylistWithSongs = resp
+    let playlist: PlaylistWithSongs = resp
         .get("playlist")
         .ok_or_else(|| SubsonicError::generic("No playlist in upstream response"))
         .and_then(|p| {
             serde_json::from_value(p.clone()).map_err(|e| SubsonicError::generic(e.to_string()))
         })?;
-
-    playlist.cover_art = playlist
-        .cover_art
-        .as_ref()
-        .map(|v| build_cover_art_id(&server_cfg.name, v));
-    playlist.entry.iter_mut().for_each(|e| {
-        e.cover_art = e
-            .cover_art
-            .as_ref()
-            .map(|v| build_cover_art_id(&server_cfg.name, v));
-    });
 
     Ok(PlaylistResponse { playlist }.into())
 }

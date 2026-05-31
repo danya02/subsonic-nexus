@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 use crate::auth::SubsonicAuth;
 use crate::error::SubsonicError;
 use crate::extract::QueryOrForm;
-use crate::nexus::{
-    IdTemplate, build_upstream_url, get_conn, parse_cover_art_id, query_song_by_nexus_id,
-};
+use crate::db::models::CoverArtSource;
+use crate::db::schema::{cover_art_sources, upstream_servers};
+use crate::nexus::{IdTemplate, build_upstream_url, get_conn, query_song_by_nexus_id};
+use diesel::prelude::*;
+use diesel_async::RunQueryDsl;
 use crate::response::SubsonicResponse;
 use crate::state::AppState;
 
@@ -185,12 +187,29 @@ pub async fn get_cover_art(
     State(state): State<AppState>,
     QueryOrForm(params): QueryOrForm<GetCoverArtParams>,
 ) -> Result<Response, SubsonicError> {
-    tracing::debug!(id = %params.id, "getCoverArt: parsing cover art id");
-    let (server_name, upstream_cover_art_id) = parse_cover_art_id(&params.id).ok_or_else(|| {
-        tracing::warn!(id = %params.id, "getCoverArt: invalid id (expected {{server_name}}:{{upstream_id}} format)");
-        SubsonicError::not_found(format!("Invalid cover art id: {}", params.id))
-    })?;
-    tracing::debug!(server_name, upstream_cover_art_id, "getCoverArt: parsed ok");
+    tracing::debug!(id = %params.id, "getCoverArt: looking up cover art source");
+    let mut conn = get_conn(&state.pool).await?;
+
+    // Resolve the cover art ID to a server by querying the mapping table.
+    // If multiple servers have the same cover art ID, pick the highest-priority one.
+    let (source, server_name): (CoverArtSource, String) = cover_art_sources::table
+        .filter(cover_art_sources::upstream_cover_art_id.eq(&params.id))
+        .inner_join(upstream_servers::table)
+        .order_by(upstream_servers::priority.asc())
+        .select((
+            cover_art_sources::all_columns,
+            upstream_servers::name,
+        ))
+        .first(&mut conn)
+        .await
+        .optional()
+        .map_err(|e| SubsonicError::generic(e.to_string()))?
+        .ok_or_else(|| {
+            tracing::warn!(id = %params.id, "getCoverArt: cover art not found in mapping table");
+            SubsonicError::not_found(format!("Cover art not found: {}", params.id))
+        })?;
+
+    tracing::debug!(server_name = %server_name, upstream_id = %source.upstream_cover_art_id, "getCoverArt: resolved to upstream");
 
     let server_cfg = state
         .config
@@ -203,7 +222,7 @@ pub async fn get_cover_art(
         })?;
 
     let size_s = params.size.map(|s| s.to_string());
-    let mut cover_params: Vec<(&str, &str)> = vec![("id", upstream_cover_art_id)];
+    let mut cover_params: Vec<(&str, &str)> = vec![("id", &params.id)];
     if let Some(ref s) = size_s {
         cover_params.push(("size", s.as_str()));
     }

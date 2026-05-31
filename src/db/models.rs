@@ -7,6 +7,22 @@
 use crate::db::schema::*;
 use diesel::prelude::*;
 
+// ── cover_art_sources ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = cover_art_sources)]
+pub struct CoverArtSource {
+    pub upstream_cover_art_id: String,
+    pub server_id: i32,
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = cover_art_sources)]
+pub struct NewCoverArtSource<'a> {
+    pub upstream_cover_art_id: &'a str,
+    pub server_id: i32,
+}
+
 // ── upstream_servers ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]

@@ -1,6 +1,13 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    cover_art_sources (upstream_cover_art_id, server_id) {
+        upstream_cover_art_id -> Text,
+        server_id -> Integer,
+    }
+}
+
+diesel::table! {
     albums (id) {
         id -> Integer,
         server_id -> Integer,
@@ -88,6 +95,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(cover_art_sources -> upstream_servers (server_id));
 diesel::joinable!(albums -> artists (artist_id));
 diesel::joinable!(albums -> upstream_servers (server_id));
 diesel::joinable!(artists -> upstream_servers (server_id));
@@ -102,6 +110,7 @@ diesel::joinable!(songs -> upstream_servers (server_id));
 diesel::allow_tables_to_appear_in_same_query!(
     albums,
     artists,
+    cover_art_sources,
     internet_radio_stations,
     podcast_channels,
     podcast_episodes,

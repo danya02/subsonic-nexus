@@ -100,20 +100,6 @@ pub fn parse_entity_id(template: IdTemplate, nexus_id: &str) -> ParsedId {
     }
 }
 
-/// Build a cover-art ID.  Always uses `{server_name}:{upstream_cover_art}` format
-/// regardless of the entity-ID template, because cover art needs the server
-/// to be unambiguous for proxying.
-pub fn build_cover_art_id(server_name: &str, upstream_cover_art: &str) -> String {
-    format!("{server_name}:{upstream_cover_art}")
-}
-
-/// Parse a nexus cover-art ID back to `(server_name, upstream_cover_art_id)`.
-pub fn parse_cover_art_id(nexus_id: &str) -> Option<(&str, &str)> {
-    let colon = nexus_id.find(':')?;
-    let server_name = &nexus_id[..colon];
-    let cover_art = &nexus_id[colon + 1..];
-    Some((server_name, cover_art))
-}
 
 // ── Upstream URL builder ──────────────────────────────────────────────────────
 
@@ -467,10 +453,6 @@ pub fn artist_id3_from_canonical(row: &CanonicalArtist, cfg: &NexusConfig) -> Ar
         });
 
     a.id = nexus_id;
-    tracing::debug!(upstream_id = %row.upstream_id, server_id = row.server_id, upstream_cover_art = ?a.cover_art, "artist_id3_from_canonical: rewriting cover_art");
-    if let Some(ref ca) = a.cover_art.clone() {
-        a.cover_art = Some(build_cover_art_id(&row.server_name, ca));
-    }
     a
 }
 
@@ -515,10 +497,6 @@ pub fn album_id3_from_canonical(row: &CanonicalAlbum, cfg: &NexusConfig) -> Albu
         });
 
     al.id = nexus_id;
-    tracing::debug!(upstream_id = %row.upstream_id, server_id = row.server_id, upstream_cover_art = ?al.cover_art, "album_id3_from_canonical: rewriting cover_art");
-    if let Some(ref ca) = al.cover_art.clone() {
-        al.cover_art = Some(build_cover_art_id(&row.server_name, ca));
-    }
     // Rewrite artist_id to nexus ID if it's an upstream ID.
     // With UpstreamOnly template this is already correct.
     if let Some(ref aid) = al.artist_id.clone()
@@ -599,10 +577,6 @@ pub fn child_from_song_row(row: &SongRow, cfg: &NexusConfig) -> Child {
         });
 
     child.id = nexus_id;
-    tracing::debug!(upstream_id = %row.upstream_id, server_id = row.server_id, upstream_cover_art = ?child.cover_art, "child_from_song_row: rewriting cover_art");
-    if let Some(ref ca) = child.cover_art.clone() {
-        child.cover_art = Some(build_cover_art_id(&row.server_name, ca));
-    }
     if template != IdTemplate::UpstreamOnly {
         if let Some(ref aid) = child.artist_id.clone() {
             child.artist_id = Some(build_entity_id(

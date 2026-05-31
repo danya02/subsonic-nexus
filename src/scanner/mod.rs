@@ -132,6 +132,10 @@ pub async fn delete_server_data(
     )
     .execute(conn)
     .await?;
+    let cover_art_deleted =
+        diesel::delete(cover_art_sources::table.filter(cover_art_sources::server_id.eq(server_id)))
+            .execute(conn)
+            .await?;
     tracing::debug!(
         server_id,
         songs = songs_deleted,
@@ -140,6 +144,7 @@ pub async fn delete_server_data(
         podcast_episodes = podcast_episodes_deleted,
         podcast_channels = podcast_channels_deleted,
         radio_stations = radio_deleted,
+        cover_art_sources = cover_art_deleted,
         "delete_server_data: completed"
     );
     Ok(())
@@ -186,6 +191,10 @@ pub async fn scan_server(
             )
             .await?;
 
+            if let Some(ref ca) = artist_id3.cover_art {
+                upsert_cover_art_source(conn, server_id, ca).await?;
+            }
+
             stats.artists += 1;
 
             // Fetch full artist to get album list.
@@ -218,6 +227,10 @@ pub async fn scan_server(
                     &album_meta,
                 )
                 .await?;
+
+                if let Some(ref ca) = album_id3.cover_art {
+                    upsert_cover_art_source(conn, server_id, ca).await?;
+                }
 
                 stats.albums += 1;
 
@@ -256,6 +269,10 @@ pub async fn scan_server(
                     )
                     .await?;
 
+                    if let Some(ref ca) = song.cover_art {
+                        upsert_cover_art_source(conn, server_id, ca).await?;
+                    }
+
                     stats.songs += 1;
                 }
             }
@@ -277,6 +294,11 @@ pub async fn scan_server(
                     &ch_meta,
                 )
                 .await?;
+
+                if let Some(ref ca) = channel.cover_art {
+                    upsert_cover_art_source(conn, server_id, ca).await?;
+                }
+
                 stats.podcast_channels += 1;
 
                 for episode in &channel.episode {
@@ -576,6 +598,26 @@ async fn upsert_radio_station(
             internet_radio_stations::stream_url.eq(stream_url),
             internet_radio_stations::metadata_json.eq(metadata_json),
         ))
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+async fn upsert_cover_art_source(
+    conn: &mut AsyncSqliteConnection,
+    server_id: i32,
+    upstream_cover_art_id: &str,
+) -> QueryResult<()> {
+    diesel::insert_into(cover_art_sources::table)
+        .values(NewCoverArtSource {
+            upstream_cover_art_id,
+            server_id,
+        })
+        .on_conflict((
+            cover_art_sources::upstream_cover_art_id,
+            cover_art_sources::server_id,
+        ))
+        .do_nothing()
         .execute(conn)
         .await?;
     Ok(())

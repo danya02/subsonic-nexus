@@ -268,12 +268,22 @@ const CANONICAL_ALBUM_SQL: &str = r#"
     )
 "#;
 
+fn normalize_query(query: &str) -> &str {
+    let q = query.trim();
+    if q.len() >= 2 && q.starts_with('"') && q.ends_with('"') {
+        &q[1..q.len() - 1]
+    } else {
+        q
+    }
+}
+
 async fn search_canonical_artists(
     conn: &mut crate::db::AsyncSqliteConnection,
     query: &str,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<CanonicalArtist>, SubsonicError> {
+    let query = normalize_query(query);
     tracing::debug!(query, limit, offset, "search_canonical_artists");
     let q = query
         .replace('\'', "''")
@@ -294,6 +304,7 @@ async fn search_canonical_albums(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<CanonicalAlbum>, SubsonicError> {
+    let query = normalize_query(query);
     tracing::debug!(query, limit, offset, "search_canonical_albums");
     let q = query
         .replace('\'', "''")
@@ -314,6 +325,7 @@ async fn search_songs(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<SongRow>, SubsonicError> {
+    let query = normalize_query(query);
     tracing::debug!(query, limit, offset, "search_songs");
     let q = query
         .replace('\'', "''")

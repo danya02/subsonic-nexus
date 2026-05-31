@@ -9,7 +9,10 @@ use tracing::Level;
 
 /// Strip a trailing `.view` from the request path so that e.g. `/rest/ping.view`
 /// is treated identically to `/rest/ping` (legacy Subsonic client convention).
-async fn strip_view_suffix(mut req: Request, next: axum::middleware::Next) -> axum::response::Response {
+async fn strip_view_suffix(
+    mut req: Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
     let uri = req.uri().clone();
     if let Some(path) = uri.path().strip_suffix(".view") {
         let new_path = if let Some(query) = uri.query() {
@@ -20,6 +23,7 @@ async fn strip_view_suffix(mut req: Request, next: axum::middleware::Next) -> ax
         if let Ok(new_uri) = new_path.parse::<axum::http::Uri>() {
             *req.uri_mut() = new_uri;
         }
+        tracing::info!(original = %uri, rewritten = %req.uri(), "stripped .view suffix");
     }
     next.run(req).await
 }

@@ -45,7 +45,11 @@ where
 }
 
 pub fn build_router(state: AppState) -> Router {
-    Router::new()
+    // Inner router: all routes with state. Outer router wraps it via
+    // fallback_service so the strip_view_suffix middleware on the outer
+    // router fires *before* the inner router does its route matching —
+    // Router::layer runs after routing, so the middleware must live outside.
+    let inner = Router::new()
         // ── Admin UI ─────────────────────────────────────────────────────────
         .route("/", get(admin::index))
         .route("/admin/scan", post(admin::trigger_scan))
@@ -224,6 +228,10 @@ pub fn build_router(state: AppState) -> Router {
             "/rest/getSonicSimilarTracks",
             get_post(advanced::get_sonic_similar_tracks),
         )
+        .with_state(state);
+
+    Router::new()
+        .fallback_service(inner)
         .layer(axum::middleware::from_fn(strip_view_suffix))
         .layer(CorsLayer::permissive())
         .layer(
@@ -231,5 +239,4 @@ pub fn build_router(state: AppState) -> Router {
                 .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .with_state(state)
 }

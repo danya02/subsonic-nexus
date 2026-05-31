@@ -66,6 +66,18 @@ fn default_album_template() -> String {
     "{music_brainz_id:-{artist_key}:{name|lowercase|trim}}".to_owned()
 }
 
+/// Credentials required for clients connecting to this nexus.
+///
+/// If absent from `nexus.toml`, all logins are accepted (no-auth mode).
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthConfig {
+    pub username: String,
+    pub password: String,
+    /// Optional list of API keys accepted in place of username+password.
+    #[serde(default)]
+    pub api_keys: Vec<String>,
+}
+
 /// Nexus-wide settings (the `[nexus]` table in `nexus.toml`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct NexusConfig {
@@ -99,6 +111,10 @@ pub struct NexusConfig {
     /// periodic scanning (manual-only via POST /admin/scan or startScan).
     #[serde(default = "default_scan_interval_secs")]
     pub scan_interval_secs: u64,
+
+    /// Optional credentials clients must present. When absent, all logins are accepted.
+    #[serde(default)]
+    pub auth: Option<AuthConfig>,
 }
 
 impl Default for NexusConfig {
@@ -108,6 +124,7 @@ impl Default for NexusConfig {
             proxy: false,
             write_target: None,
             scan_interval_secs: default_scan_interval_secs(),
+            auth: None,
         }
     }
 }

@@ -1,11 +1,18 @@
 use axum::{
     extract::{FromRequestParts, Query},
-    http::{StatusCode, request::Parts},
+    http::request::Parts,
 };
 use serde::Deserialize;
 
-/// Parsed subsonic authentication parameters from query string or form body.
-/// At this scaffolding stage the extractor always succeeds — validation is a no-op.
+use crate::config::AuthConfig;
+use crate::error::{ErrorCode, SubsonicError};
+use crate::state::AppState;
+
+/// Parsed and validated Subsonic authentication parameters.
+///
+/// If `[nexus.auth]` is configured, the extractor rejects requests with wrong
+/// credentials before they reach any handler.  If no auth is configured, all
+/// logins are accepted (no-auth mode).
 #[derive(Debug, Clone)]
 pub struct SubsonicAuth {
     pub username: Option<String>,
@@ -17,13 +24,13 @@ pub struct SubsonicAuth {
 
 #[derive(Debug, Clone)]
 pub enum Credential {
-    /// Legacy plain-text password (`p=` param, hex-encoded).
+    /// Legacy plain-text password (`p=` param, optionally hex-encoded with `enc:` prefix).
     Plain(String),
     /// Token-based auth (`t=` MD5 token + `s=` salt, API ≥ 1.13.0).
     Token { token: String, salt: String },
     /// OpenSubsonic API key (`apiKey=` param, no username required).
     ApiKey(String),
-    /// No credential provided (stub / unauthenticated).
+    /// No credential provided.
     None,
 }
 
@@ -88,17 +95,82 @@ impl RawAuthParams {
     }
 }
 
-impl<S: Send + Sync> FromRequestParts<S> for SubsonicAuth {
-    type Rejection = (StatusCode, &'static str);
+impl SubsonicAuth {
+    fn validate(&self, cfg: &AuthConfig) -> Result<(), SubsonicError> {
+        let wrong = || SubsonicError::new(ErrorCode::WrongCredentials, "Wrong username or password.");
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        // Extract auth params from the query string via Axum's Query extractor.
-        // For POST form-body endpoints the same params are typically present in the query string
-        // as well (most clients include them there). Full form-body support can be
-        // added when real authentication is implemented.
+        match &self.credential {
+            Credential::ApiKey(key) => {
+                if cfg.api_keys.iter().any(|k| k == key) {
+                    Ok(())
+                } else {
+                    Err(SubsonicError::new(ErrorCode::InvalidApiKey, "Invalid API key."))
+                }
+            }
+            Credential::Token { token, salt } => {
+                let username = self.username.as_deref().unwrap_or("");
+                if username != cfg.username {
+                    return Err(wrong());
+                }
+                let expected = format!("{:x}", md5::compute(format!("{}{}", cfg.password, salt)));
+                if token == &expected {
+                    Ok(())
+                } else {
+                    Err(wrong())
+                }
+            }
+            Credential::Plain(p) => {
+                let username = self.username.as_deref().unwrap_or("");
+                if username != cfg.username {
+                    return Err(wrong());
+                }
+                let password = decode_plain_password(p);
+                if password == cfg.password {
+                    Ok(())
+                } else {
+                    Err(wrong())
+                }
+            }
+            Credential::None => Err(wrong()),
+        }
+    }
+}
+
+/// Decodes the `p=` parameter: strips `enc:` prefix and hex-decodes if present,
+/// otherwise returns the value as-is.
+fn decode_plain_password(p: &str) -> String {
+    if let Some(hex) = p.strip_prefix("enc:") {
+        (0..hex.len())
+            .step_by(2)
+            .filter_map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+            .collect::<Vec<u8>>()
+            .pipe(|bytes| String::from_utf8(bytes).unwrap_or_default())
+    } else {
+        p.to_owned()
+    }
+}
+
+// Tiny helper to avoid a local variable just for the pipe call.
+trait Pipe: Sized {
+    fn pipe<F: FnOnce(Self) -> R, R>(self, f: F) -> R {
+        f(self)
+    }
+}
+impl<T> Pipe for T {}
+
+impl FromRequestParts<AppState> for SubsonicAuth {
+    type Rejection = SubsonicError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
         let Query(params) = Query::<RawAuthParams>::from_request_parts(parts, state)
             .await
             .unwrap_or(Query(RawAuthParams::default()));
-        Ok(params.into_auth())
+        let auth = params.into_auth();
+
+        if let Some(auth_cfg) = &state.config.nexus.auth {
+            auth.validate(auth_cfg)?;
+        }
+
+        Ok(auth)
     }
 }

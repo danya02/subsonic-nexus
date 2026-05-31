@@ -1,10 +1,28 @@
 use axum::{
     Router,
+    extract::Request,
     routing::{MethodRouter, get, post},
 };
 use tower_http::cors::CorsLayer;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing::Level;
+
+/// Strip a trailing `.view` from the request path so that e.g. `/rest/ping.view`
+/// is treated identically to `/rest/ping` (legacy Subsonic client convention).
+async fn strip_view_suffix(mut req: Request, next: axum::middleware::Next) -> axum::response::Response {
+    let uri = req.uri().clone();
+    if let Some(path) = uri.path().strip_suffix(".view") {
+        let new_path = if let Some(query) = uri.query() {
+            format!("{}?{}", path, query)
+        } else {
+            path.to_owned()
+        };
+        if let Ok(new_uri) = new_path.parse::<axum::http::Uri>() {
+            *req.uri_mut() = new_uri;
+        }
+    }
+    next.run(req).await
+}
 
 use crate::handlers::{
     admin, advanced, bookmarks, browsing, chat, internet_radio, jukebox, lists, media_annotation,
@@ -202,6 +220,7 @@ pub fn build_router(state: AppState) -> Router {
             "/rest/getSonicSimilarTracks",
             get_post(advanced::get_sonic_similar_tracks),
         )
+        .layer(axum::middleware::from_fn(strip_view_suffix))
         .layer(CorsLayer::permissive())
         .layer(
             TraceLayer::new_for_http()
